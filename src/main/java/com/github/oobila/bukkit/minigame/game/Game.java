@@ -3,22 +3,33 @@ package com.github.oobila.bukkit.minigame.game;
 import com.github.alastairbooth.abid.ABID;
 import com.github.alastairbooth.abid.ABIDException;
 import com.github.oobila.bukkit.minigame.environments.Environment;
+import com.github.oobila.bukkit.persistence.model.PersistedObject;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Getter
-public abstract class Game {
+public abstract class Game extends PersistedObject {
 
-    private final ABID id = new ABID();
+    private final ABID id;
+    private final String name;
     private GameStatus status = GameStatus.CLOSED;
     private Arena area;
     @Setter
     private Environment environment;
-    private List<Team> teams;
+    private List<Team> teams = new ArrayList<>();
 
-    protected Game(Arena area) throws ABIDException {
+    protected Game(String name, Arena area) throws ABIDException {
+        this.id = new ABID();
+        this.name = name;
+        this.area = area;
+    }
+
+    protected Game(ABID id, String name, Arena area) {
+        this.id = id;
+        this.name = name;
         this.area = area;
     }
 
