@@ -6,6 +6,7 @@ import com.github.oobila.bukkit.minigame.game.Game;
 import com.github.oobila.bukkit.minigame.game.GameStatus;
 import com.github.oobila.bukkit.persistence.model.PersistedObject;
 import lombok.Getter;
+import org.bukkit.Bukkit;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -14,7 +15,7 @@ import java.util.Map;
 public class Environment extends PersistedObject {
 
     private final ABID id;
-    private String name;
+    private final String name;
     private Game game;
     private EnvironmentStatus status = EnvironmentStatus.CLOSED;
 
@@ -36,7 +37,9 @@ public class Environment extends PersistedObject {
         return true;
     }
 
-//    public boolean close() {
+    public void close() {
+        Bukkit.getLogger().info("debug: close - " + id.toString());
+        status = EnvironmentStatus.CLOSED;
 //        if (status.equals(EnvironmentStatus.OPEN)) {
 //            if (game != null && game.getStatus().equals(GameStatus.OPEN)) {
 //                return false;
@@ -47,10 +50,11 @@ public class Environment extends PersistedObject {
 //            }
 //        }
 //
-//    }
+    }
 
     public void open() {
-
+        Bukkit.getLogger().info("debug: open - " + id.toString());
+        status = EnvironmentStatus.OPEN;
     }
 
     @Override
