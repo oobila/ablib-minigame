@@ -15,7 +15,6 @@ public abstract class Game extends PersistedObject {
 
     private final ABID id;
     private final String name;
-    private GameStatus status = GameStatus.CLOSED;
     private Arena area;
     @Setter
     private Environment environment;
@@ -33,13 +32,9 @@ public abstract class Game extends PersistedObject {
         this.area = area;
     }
 
-    public void stop() {
-//        if (status.equals(GameStatus.IN_PROGRESS)) {
-//            targetState = GameStatus.STOPPED;
-//        }
-    }
-
-    public void start() {
-
-    }
+    public abstract boolean canClose();
+    public abstract boolean close();
+    public abstract boolean canOpen();
+    public abstract boolean open();
+    public abstract boolean isRunning();
 }

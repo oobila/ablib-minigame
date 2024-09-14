@@ -2,6 +2,7 @@ package com.github.oobila.bukkit.minigame.commands;
 
 import com.github.alastairbooth.abid.ABID;
 import com.github.oobila.bukkit.command.Command;
+import com.github.oobila.bukkit.command.arguments.StringArg;
 import com.github.oobila.bukkit.minigame.environments.Environment;
 import com.github.oobila.bukkit.minigame.environments.EnvironmentStatus;
 import com.github.oobila.bukkit.persistence.caches.DataCache;
@@ -14,9 +15,11 @@ import static com.github.oobila.bukkit.common.ABCommon.message;
 public class CloseEnvironmentCommand extends Command {
 
     public CloseEnvironmentCommand(DataCache<ABID, Environment> dataCache) {
-        super("cloe", "");
+        super("close", "");
         aliases("c");
-        arg("id");
+        StringArg nameArg = new StringArg("name");
+        nameArg.suggestionCallable((player, s) -> CommandUtils.getEnvironmentNames(dataCache));
+        arg(nameArg);
         combinedCommand((player, command, s, args) -> {
             Environment environment = CommandUtils.getEnvironment(args[0], player, dataCache);
             if (environment == null) {

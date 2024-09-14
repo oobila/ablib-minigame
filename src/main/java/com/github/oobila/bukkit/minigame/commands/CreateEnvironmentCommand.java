@@ -18,6 +18,12 @@ public class CreateEnvironmentCommand extends Command {
         arg("name");
         combinedCommand((player, command, s, args) -> {
             try {
+                for (Environment environment : dataCache.get()) {
+                    if (environment.getName().equalsIgnoreCase(args[0])) {
+                        message("an environment already exists with this name", player);
+                        return;
+                    }
+                }
                 Environment environment = new Environment(args[0]);
                 dataCache.put(environment.getId(), environment);
             } catch (ABIDException e) {

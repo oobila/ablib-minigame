@@ -3,10 +3,8 @@ package com.github.oobila.bukkit.minigame.environments;
 import com.github.alastairbooth.abid.ABID;
 import com.github.alastairbooth.abid.ABIDException;
 import com.github.oobila.bukkit.minigame.game.Game;
-import com.github.oobila.bukkit.minigame.game.GameStatus;
 import com.github.oobila.bukkit.persistence.model.PersistedObject;
 import lombok.Getter;
-import org.bukkit.Bukkit;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -30,31 +28,46 @@ public class Environment extends PersistedObject {
     }
 
     public boolean setGame(Game game) {
-        if (!this.status.equals(EnvironmentStatus.CLOSED) || this.game.getStatus().equals(GameStatus.OPEN)) {
+        if (!this.status.equals(EnvironmentStatus.CLOSED)) {
             return false;
         }
+        if (this.game != null) {
+            if (this.game.isRunning()) {
+                return false;
+            }
+            this.game.setEnvironment(null);
+        }
         this.game = game;
+        game.setEnvironment(this);
         return true;
     }
 
-    public void close() {
-        Bukkit.getLogger().info("debug: close - " + id.toString());
-        status = EnvironmentStatus.CLOSED;
-//        if (status.equals(EnvironmentStatus.OPEN)) {
-//            if (game != null && game.getStatus().equals(GameStatus.OPEN)) {
-//                return false;
-//            } else {
-//                status = EnvironmentStatus.CLOSING;
-//                game.stop();
-//                return true;
-//            }
-//        }
-//
+    public boolean open() {
+        if (game == null || !game.canOpen()) {
+            return false;
+        }
+        status = EnvironmentStatus.OPEN;
+        game.open();
+        return true;
     }
 
-    public void open() {
-        Bukkit.getLogger().info("debug: open - " + id.toString());
-        status = EnvironmentStatus.OPEN;
+    public boolean close() {
+        if (status.equals(EnvironmentStatus.OPEN)) {
+            if (game.canClose()) {
+                game.close();
+                status = EnvironmentStatus.CLOSING;
+                return true;
+            } else {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    public void notifyClosed() {
+        if (status.equals(EnvironmentStatus.CLOSING)) {
+            status = EnvironmentStatus.CLOSED;
+        }
     }
 
     @Override

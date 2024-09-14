@@ -45,6 +45,11 @@
         </dependency>
         <dependency>
             <groupId>com.github.oobila</groupId>
+            <artifactId>ablib-itemstack</artifactId>
+            <version>1.1.1</version>
+        </dependency>
+        <dependency>
+            <groupId>com.github.oobila</groupId>
             <artifactId>ablib-persistence</artifactId>
             <version>1.2.0</version>
         </dependency>
