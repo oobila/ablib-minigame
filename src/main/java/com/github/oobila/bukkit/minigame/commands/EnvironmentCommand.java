@@ -13,6 +13,7 @@ public class EnvironmentCommand extends Command {
         subCommand(new CreateEnvironmentCommand(dataCache));
         subCommand(new OpenEnvironmentCommand(dataCache));
         subCommand(new CloseEnvironmentCommand(dataCache));
+        subCommand(new RemoveEnvironmentCommand(dataCache));
         subCommand(new ViewEnvironmentsCommand(plugin, dataCache));
     }
 }

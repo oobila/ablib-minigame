@@ -15,15 +15,15 @@ public abstract class Game extends PersistedObject {
 
     private final ABID id;
     private final String name;
+    @Setter
     private Arena area;
     @Setter
     private Environment environment;
     private List<Team> teams = new ArrayList<>();
 
-    protected Game(String name, Arena area) throws ABIDException {
+    protected Game(String name) throws ABIDException {
         this.id = new ABID();
         this.name = name;
-        this.area = area;
     }
 
     protected Game(ABID id, String name, Arena area) {
@@ -37,4 +37,6 @@ public abstract class Game extends PersistedObject {
     public abstract boolean canOpen();
     public abstract boolean open();
     public abstract boolean isRunning();
+    public abstract boolean canJoin();
+    public abstract String getStatusMessage();
 }
