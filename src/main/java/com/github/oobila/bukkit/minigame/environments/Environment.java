@@ -3,14 +3,16 @@ package com.github.oobila.bukkit.minigame.environments;
 import com.github.alastairbooth.abid.ABID;
 import com.github.alastairbooth.abid.ABIDException;
 import com.github.oobila.bukkit.minigame.game.Game;
-import com.github.oobila.bukkit.persistence.model.PersistedObject;
 import lombok.Getter;
+import org.bukkit.configuration.serialization.ConfigurationSerializable;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.HashMap;
 import java.util.Map;
 
+@SuppressWarnings({"unused", "UnusedReturnValue"})
 @Getter
-public class Environment extends PersistedObject {
+public class Environment implements ConfigurationSerializable {
 
     private final ABID id;
     private final String name;
@@ -70,6 +72,7 @@ public class Environment extends PersistedObject {
         }
     }
 
+    @NotNull
     @Override
     public Map<String, Object> serialize() {
         Map<String, Object> map = new HashMap<>();

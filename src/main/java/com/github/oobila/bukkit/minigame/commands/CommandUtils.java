@@ -3,7 +3,8 @@ package com.github.oobila.bukkit.minigame.commands;
 import com.github.alastairbooth.abid.ABID;
 import com.github.oobila.bukkit.chat.Message;
 import com.github.oobila.bukkit.minigame.environments.Environment;
-import com.github.oobila.bukkit.persistence.caches.DataCache;
+import com.github.oobila.bukkit.persistence.caches.standard.ReadAndWriteCache;
+import com.github.oobila.bukkit.persistence.model.CacheItem;
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
 import org.bukkit.entity.Player;
@@ -20,11 +21,11 @@ public class CommandUtils {
     public static Environment getEnvironment(
             String name,
             Player player,
-            DataCache<ABID, Environment> dataCache
+            ReadAndWriteCache<ABID, Environment> cache
     ) {
-        for (Environment environment : dataCache.get()) {
-            if (environment.getName().equalsIgnoreCase(name)) {
-                return environment;
+        for (CacheItem<ABID,Environment> cacheItem : cache.values()) {
+            if (cacheItem.getData().getName().equalsIgnoreCase(name)) {
+                return cacheItem.getData();
             }
         }
         log(Level.WARNING, "environment does not exist with name: {}", name);
@@ -32,8 +33,8 @@ public class CommandUtils {
         return null;
     }
 
-    public static List<String> getEnvironmentNames(DataCache<ABID, Environment> dataCache) {
-        return dataCache.get().stream().map(Environment::getName).toList();
+    public static List<String> getEnvironmentNames(ReadAndWriteCache<ABID, Environment> cache) {
+        return cache.values().stream().map(cacheItem -> cacheItem.getData().getName()).toList();
     }
 
 }

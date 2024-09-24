@@ -2,20 +2,22 @@ package com.github.oobila.bukkit.minigame.game;
 
 import com.github.alastairbooth.abid.ABID;
 import com.github.alastairbooth.abid.ABIDException;
-import com.github.oobila.bukkit.persistence.model.PersistedObject;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import org.bukkit.Location;
+import org.bukkit.configuration.serialization.ConfigurationSerializable;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+@SuppressWarnings("unused")
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @Getter
-public class Arena extends PersistedObject {
+public class Arena implements ConfigurationSerializable {
 
     private final ABID id;
     private Location minLocation;
@@ -30,6 +32,7 @@ public class Arena extends PersistedObject {
         this.maxLocation = maxLocation;
     }
 
+    @NotNull
     @Override
     public Map<String, Object> serialize() {
         Map<String, Object> map = new HashMap<>();
@@ -42,6 +45,7 @@ public class Arena extends PersistedObject {
         return map;
     }
 
+    @SuppressWarnings("unchecked")
     public static Arena deserialize(Map<String, Object> args) {
         return new Arena(
                 ABID.fromString((String) args.get("id")),

@@ -1,28 +1,31 @@
 package com.github.oobila.bukkit.minigame.game;
 
 import com.github.oobila.bukkit.common.utils.model.BlockColor;
-import com.github.oobila.bukkit.persistence.model.PersistedObject;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
+import org.bukkit.configuration.serialization.ConfigurationSerializable;
 import org.bukkit.entity.Player;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+@SuppressWarnings("unused")
 @Getter
-public class Team extends PersistedObject {
+public class Team implements ConfigurationSerializable {
 
-    private String name;
-    private TeamColor teamColor;
-    private List<Player> players = new ArrayList<>();
+    private final String name;
+    private final TeamColor teamColor;
+    private final List<Player> players = new ArrayList<>();
 
     public Team(String name, TeamColor color) {
         this.name = name;
         this.teamColor = color;
     }
 
+    @NotNull
     @Override
     public Map<String, Object> serialize() {
         Map<String, Object> map = new HashMap<>();
@@ -49,6 +52,6 @@ public class Team extends PersistedObject {
         CYAN(BlockColor.LIGHT_BLUE),
         PINK(BlockColor.PINK);
 
-        private BlockColor blockColor;
+        private final BlockColor blockColor;
     }
 }

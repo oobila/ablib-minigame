@@ -5,7 +5,7 @@ import com.github.oobila.bukkit.command.Command;
 import com.github.oobila.bukkit.command.arguments.StringArg;
 import com.github.oobila.bukkit.minigame.environments.Environment;
 import com.github.oobila.bukkit.minigame.environments.EnvironmentStatus;
-import com.github.oobila.bukkit.persistence.caches.DataCache;
+import com.github.oobila.bukkit.persistence.caches.standard.ReadAndWriteCache;
 
 import java.util.logging.Level;
 
@@ -14,14 +14,14 @@ import static com.github.oobila.bukkit.common.ABCommon.message;
 
 public class OpenEnvironmentCommand extends Command {
 
-    public OpenEnvironmentCommand(DataCache<ABID, Environment> dataCache) {
+    public OpenEnvironmentCommand(ReadAndWriteCache<ABID, Environment> cache) {
         super("open", "");
         aliases("o");
         StringArg nameArg = new StringArg("name");
-        nameArg.suggestionCallable((player, s) -> CommandUtils.getEnvironmentNames(dataCache));
+        nameArg.suggestionCallable((player, s) -> CommandUtils.getEnvironmentNames(cache));
         arg(nameArg);
         combinedCommand((player, command, s, args) -> {
-            Environment environment = CommandUtils.getEnvironment(args[0], player, dataCache);
+            Environment environment = CommandUtils.getEnvironment(args[0], player, cache);
             if (environment == null) {
                 return;
             }
