@@ -15,7 +15,7 @@ import static com.github.oobila.bukkit.common.ABCommon.message;
 public class RemoveEnvironmentCommand extends Command {
 
     public RemoveEnvironmentCommand(ReadAndWriteCache<ABID, Environment> cache) {
-        super("remove", "");
+        super("remove", "remove this environment");
         aliases("delete", "r");
         StringArg nameArg = new StringArg("name");
         nameArg.suggestionCallable((player, s) -> CommandUtils.getEnvironmentNames(cache));

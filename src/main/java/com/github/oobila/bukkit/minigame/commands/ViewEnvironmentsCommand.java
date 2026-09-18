@@ -10,7 +10,7 @@ import org.bukkit.plugin.Plugin;
 public class ViewEnvironmentsCommand extends Command {
 
     public ViewEnvironmentsCommand(Plugin plugin, ReadAndWriteCache<ABID, Environment> cache) {
-        super("view", "");
+        super("view", "view all environments");
         aliases("v");
         command((player, command, s, strings) ->
             new ViewEnvironmentsGui(plugin, player, cache).open()

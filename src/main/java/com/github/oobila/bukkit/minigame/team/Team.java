@@ -1,7 +1,6 @@
-package com.github.oobila.bukkit.minigame.game;
+package com.github.oobila.bukkit.minigame.team;
 
 import com.github.oobila.bukkit.common.utils.model.BlockColor;
-import lombok.AllArgsConstructor;
 import lombok.Getter;
 import org.bukkit.configuration.serialization.ConfigurationSerializable;
 import org.bukkit.entity.Player;
@@ -17,10 +16,10 @@ import java.util.Map;
 public class Team implements ConfigurationSerializable {
 
     private final String name;
-    private final TeamColor teamColor;
+    private final BlockColor teamColor;
     private final List<Player> players = new ArrayList<>();
 
-    public Team(String name, TeamColor color) {
+    public Team(String name, BlockColor color) {
         this.name = name;
         this.teamColor = color;
     }
@@ -37,21 +36,7 @@ public class Team implements ConfigurationSerializable {
     public static Team deserialize(Map<String, Object> args) {
         return new Team(
                 (String) args.get("name"),
-                TeamColor.valueOf((String) args.get("teamColor"))
+                BlockColor.valueOf((String) args.get("teamColor"))
         );
-    }
-
-    @AllArgsConstructor
-    @Getter
-    public enum TeamColor {
-        WHITE(BlockColor.WHITE),
-        GRAY(BlockColor.GRAY),
-        RED(BlockColor.RED),
-        YELLOW(BlockColor.YELLOW),
-        GREEN(BlockColor.LIME),
-        CYAN(BlockColor.LIGHT_BLUE),
-        PINK(BlockColor.PINK);
-
-        private final BlockColor blockColor;
     }
 }

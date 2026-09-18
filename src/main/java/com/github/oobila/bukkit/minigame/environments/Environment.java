@@ -3,11 +3,17 @@ package com.github.oobila.bukkit.minigame.environments;
 import com.github.alastairbooth.abid.ABID;
 import com.github.alastairbooth.abid.ABIDException;
 import com.github.oobila.bukkit.minigame.game.Game;
+import com.github.oobila.bukkit.minigame.game.GameStatus;
 import lombok.Getter;
+import lombok.Setter;
+import org.bukkit.Location;
+import org.bukkit.OfflinePlayer;
 import org.bukkit.configuration.serialization.ConfigurationSerializable;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @SuppressWarnings({"unused", "UnusedReturnValue"})
@@ -18,15 +24,29 @@ public class Environment implements ConfigurationSerializable {
     private final String name;
     private Game game;
     private EnvironmentStatus status = EnvironmentStatus.CLOSED;
+    @Setter
+    private Location exitLocation;
+    private final List<Portal> portals;
 
     public Environment(String name) throws ABIDException {
         this.id = new ABID();
         this.name = name;
+        this.portals = new ArrayList<>();
     }
 
-    private Environment(ABID id, String name) {
+    private Environment(ABID id, String name, Location exitLocation, List<Portal> portals) {
         this.id = id;
         this.name = name;
+        this.exitLocation = exitLocation;
+        this.portals = portals != null ? portals : new ArrayList<>();
+    }
+
+    public void addPortal(Portal portal) {
+        portals.add(portal);
+    }
+
+    public void removeAllPortals() {
+        portals.clear();
     }
 
     public boolean setGame(Game game) {
@@ -34,9 +54,6 @@ public class Environment implements ConfigurationSerializable {
             return false;
         }
         if (this.game != null) {
-            if (this.game.isRunning()) {
-                return false;
-            }
             this.game.setEnvironment(null);
         }
         this.game = game;
@@ -45,7 +62,7 @@ public class Environment implements ConfigurationSerializable {
     }
 
     public boolean open() {
-        if (game == null || !game.canOpen()) {
+        if (game == null || game.getStatus() == null || !game.getStatus().equals(GameStatus.READY)) {
             return false;
         }
         status = EnvironmentStatus.OPEN;
@@ -54,16 +71,12 @@ public class Environment implements ConfigurationSerializable {
     }
 
     public boolean close() {
-        if (status.equals(EnvironmentStatus.OPEN)) {
-            if (game.canClose()) {
-                game.close();
-                status = EnvironmentStatus.CLOSING;
-                return true;
-            } else {
-                return false;
-            }
+        if (!status.equals(EnvironmentStatus.OPEN)) {
+            return false;
         }
-        return false;
+        game.close();
+        status = EnvironmentStatus.CLOSING;
+        return true;
     }
 
     public void notifyClosed() {
@@ -78,13 +91,33 @@ public class Environment implements ConfigurationSerializable {
         Map<String, Object> map = new HashMap<>();
         map.put("id", id.toString());
         map.put("name", name);
+        if (exitLocation != null) {
+            map.put("exitLocation", exitLocation);
+        }
+        map.put("portals", new ArrayList<>(portals));
         return map;
     }
 
     public static Environment deserialize(Map<String, Object> args) {
         return new Environment(
                 ABID.fromString((String) args.get("id")),
-                (String) args.get("name")
+                (String) args.get("name"),
+                (Location) args.get("exitLocation"),
+                extractPortals(args)
         );
+    }
+
+    @NotNull
+    private static List<Portal> extractPortals(@NotNull Map<String, Object> args) {
+        List<Portal> portals = new ArrayList<>();
+        Object raw = args.get("portals");
+        if (raw instanceof List<?> list) {
+            for (Object entry : list) {
+                if (entry instanceof Portal portal) {
+                    portals.add(portal);
+                }
+            }
+        }
+        return portals;
     }
 }

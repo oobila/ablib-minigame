@@ -10,13 +10,12 @@ import com.github.oobila.bukkit.persistence.caches.standard.ReadAndWriteCache;
 import java.util.logging.Level;
 
 import static com.github.oobila.bukkit.common.ABCommon.log;
-import static com.github.oobila.bukkit.common.ABCommon.message;
 
 public class CloseEnvironmentCommand extends Command {
 
     public CloseEnvironmentCommand(ReadAndWriteCache<ABID, Environment> cache) {
-        super("close", "");
-        aliases("c");
+        super("close", "close this environment");
+        aliases("x");
         StringArg nameArg = new StringArg("name");
         nameArg.suggestionCallable((player, s) -> CommandUtils.getEnvironmentNames(cache));
         arg(nameArg);

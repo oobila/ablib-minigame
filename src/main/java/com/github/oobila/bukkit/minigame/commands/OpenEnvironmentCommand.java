@@ -15,7 +15,7 @@ import static com.github.oobila.bukkit.common.ABCommon.message;
 public class OpenEnvironmentCommand extends Command {
 
     public OpenEnvironmentCommand(ReadAndWriteCache<ABID, Environment> cache) {
-        super("open", "");
+        super("open", "open this environment");
         aliases("o");
         StringArg nameArg = new StringArg("name");
         nameArg.suggestionCallable((player, s) -> CommandUtils.getEnvironmentNames(cache));

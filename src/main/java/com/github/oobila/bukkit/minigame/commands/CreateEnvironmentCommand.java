@@ -10,12 +10,12 @@ import com.github.oobila.bukkit.persistence.model.CacheItem;
 import java.util.logging.Level;
 
 import static com.github.oobila.bukkit.common.ABCommon.log;
-import static com.github.oobila.bukkit.common.ABCommon.message;
 
 public class CreateEnvironmentCommand extends Command {
 
     public CreateEnvironmentCommand(ReadAndWriteCache<ABID, Environment> cache) {
-        super("create", "");
+        super("create", "create a new environment");
+        aliases("c");
         arg("name");
         combinedCommand((player, command, s, args) -> {
             try {

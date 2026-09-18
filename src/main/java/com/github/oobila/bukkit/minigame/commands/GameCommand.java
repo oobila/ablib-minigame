@@ -5,6 +5,7 @@ import com.github.oobila.bukkit.command.Command;
 public class GameCommand  extends Command {
 
     public GameCommand() {
-        super("game", "");
+        super("game", "manage minigame games");
+        aliases("g");
     }
 }

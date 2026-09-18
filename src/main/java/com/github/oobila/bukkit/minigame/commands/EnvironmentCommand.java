@@ -10,11 +10,14 @@ import org.bukkit.plugin.Plugin;
 public class EnvironmentCommand extends Command {
 
     public EnvironmentCommand(Plugin plugin, ReadAndWriteCache<ABID, Environment> dataCache) {
-        super("environment", "");
+        super("environment", "manage minigame environments");
+        aliases("e");
         subCommand(new CreateEnvironmentCommand(dataCache));
         subCommand(new OpenEnvironmentCommand(dataCache));
         subCommand(new CloseEnvironmentCommand(dataCache));
+        subCommand(new EnvironmentFeature(dataCache));
         subCommand(new RemoveEnvironmentCommand(dataCache));
+        subCommand(new SetExitLocationCommand(dataCache));
         subCommand(new ViewEnvironmentsCommand(plugin, dataCache));
     }
 }
