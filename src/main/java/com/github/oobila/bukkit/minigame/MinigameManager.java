@@ -10,7 +10,7 @@ public class MinigameManager {
     @Getter
     private static final Set<Minigame> minigames = new HashSet<>();
 
-    public void register(Minigame minigame) {
+    public static void register(Minigame minigame) {
         minigames.add(minigame);
     }
 
