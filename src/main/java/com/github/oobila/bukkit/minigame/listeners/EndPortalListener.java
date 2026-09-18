@@ -1,5 +1,7 @@
 package com.github.oobila.bukkit.minigame.listeners;
 
+import com.github.oobila.bukkit.minigame.MinigameManager;
+import com.github.oobila.bukkit.persistence.model.CacheItem;
 import org.bukkit.Location;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -16,10 +18,11 @@ public class EndPortalListener implements Listener {
         }
 
         Location location = event.getPlayer().getLocation();
-        boolean withinMinigamePortal = MinigameManager.getEnvironments().stream()
-                .flatMap(environment -> environment.getPortals().stream())
+        boolean withinMinigamePortal = MinigameManager.getMinigames().stream()
+                .flatMap(minigame -> minigame.getEnvironmentCache().values().stream()
+                        .flatMap(cacheItem -> cacheItem.getData().getPortals().stream())
+                )
                 .anyMatch(portal -> portal.contains(location));
-
         if (withinMinigamePortal) {
             event.setCancelled(true);
             //TODO: handle player entering a minigame environment's portal
