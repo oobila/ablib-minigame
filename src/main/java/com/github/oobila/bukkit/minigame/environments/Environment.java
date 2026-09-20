@@ -2,6 +2,7 @@ package com.github.oobila.bukkit.minigame.environments;
 
 import com.github.alastairbooth.abid.ABID;
 import com.github.alastairbooth.abid.ABIDException;
+import com.github.oobila.bukkit.minigame.arena.Arena;
 import com.github.oobila.bukkit.minigame.game.Game;
 import com.github.oobila.bukkit.minigame.game.GameStatus;
 import lombok.Getter;
@@ -22,7 +23,7 @@ public class Environment implements ConfigurationSerializable {
 
     private final ABID id;
     private final String name;
-    private Game game;
+    private Arena arena;
     private EnvironmentStatus status = EnvironmentStatus.CLOSED;
     @Setter
     private Location exitLocation;
@@ -49,19 +50,20 @@ public class Environment implements ConfigurationSerializable {
         portals.clear();
     }
 
-    public boolean setGame(Game game) {
+    public boolean setArena(Arena arena) {
         if (!this.status.equals(EnvironmentStatus.CLOSED)) {
             return false;
         }
-        if (this.game != null) {
-            this.game.setEnvironment(null);
+        if (this.arena != null) {
+            this.arena.setEnvironment(null);
         }
-        this.game = game;
-        game.setEnvironment(this);
+        this.arena = arena;
+        arena.setEnvironment(this);
         return true;
     }
 
     public boolean open() {
+        Game game = arena != null ? arena.getGame() : null;
         if (game == null || game.getStatus() == null || !game.getStatus().equals(GameStatus.READY)) {
             return false;
         }
@@ -74,7 +76,7 @@ public class Environment implements ConfigurationSerializable {
         if (!status.equals(EnvironmentStatus.OPEN)) {
             return false;
         }
-        game.close();
+        arena.getGame().close();
         status = EnvironmentStatus.CLOSING;
         return true;
     }

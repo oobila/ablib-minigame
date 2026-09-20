@@ -1,42 +1,73 @@
 package com.github.oobila.bukkit.minigame.team;
 
-import com.github.oobila.bukkit.common.utils.model.BlockColor;
 import lombok.Getter;
+import org.bukkit.Bukkit;
+import org.bukkit.OfflinePlayer;
 import org.bukkit.configuration.serialization.ConfigurationSerializable;
-import org.bukkit.entity.Player;
+import org.bukkit.configuration.serialization.ConfigurationSerialization;
+import org.bukkit.configuration.serialization.SerializableAs;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @SuppressWarnings("unused")
-@Getter
+@SerializableAs("Team")
 public class Team implements ConfigurationSerializable {
 
-    private final String name;
-    private final BlockColor teamColor;
-    private final List<Player> players = new ArrayList<>();
+    static {
+        ConfigurationSerialization.registerClass(Team.class);
+    }
 
-    public Team(String name, BlockColor color) {
-        this.name = name;
-        this.teamColor = color;
+    @Getter
+    private final TeamConfig teamConfig;
+    private final List<OfflinePlayer> players = new ArrayList<>();
+
+    public Team(TeamConfig teamConfig) {
+        this.teamConfig = teamConfig;
+    }
+
+    public void addPlayer(OfflinePlayer player) {
+        players.add(player);
+        if (teamConfig.isGlowing()) {
+            player.getPlayer().setGlowing(true);
+        }
+    }
+
+    public void removePlayer(OfflinePlayer player) {
+        player.getPlayer().setGlowing(false);
+        players.remove(player);
+    }
+
+    public boolean hasPlayer(OfflinePlayer player) {
+        return players.contains(player);
+    }
+
+    public int getPlayerCount() {
+        return players.size();
     }
 
     @NotNull
     @Override
     public Map<String, Object> serialize() {
         Map<String, Object> map = new HashMap<>();
-        map.put("name", name);
-        map.put("teamColor", teamColor);
+        map.put("teamConfig", teamConfig);
+        map.put("players", players.stream().map(player -> player.getUniqueId().toString()).toList());
         return map;
     }
 
-    public static Team deserialize(Map<String, Object> args) {
-        return new Team(
-                (String) args.get("name"),
-                BlockColor.valueOf((String) args.get("teamColor"))
-        );
+    @NotNull
+    public static Team deserialize(@NotNull Map<String, Object> args) {
+        Team team = new Team((TeamConfig) args.get("teamConfig"));
+        Object rawPlayers = args.get("players");
+        if (rawPlayers instanceof List<?> list) {
+            for (Object entry : list) {
+                team.players.add(Bukkit.getOfflinePlayer(UUID.fromString((String) entry)));
+            }
+        }
+        return team;
     }
 }

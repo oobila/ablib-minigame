@@ -2,7 +2,10 @@ package com.github.oobila.bukkit.minigame.arena;
 
 import com.github.alastairbooth.abid.ABID;
 import com.github.alastairbooth.abid.ABIDException;
+import com.github.oobila.bukkit.minigame.environments.Environment;
+import com.github.oobila.bukkit.minigame.game.Game;
 import lombok.Getter;
+import lombok.Setter;
 import org.bukkit.Location;
 import org.bukkit.configuration.serialization.ConfigurationSerializable;
 import org.bukkit.configuration.serialization.ConfigurationSerialization;
@@ -24,6 +27,9 @@ public class Arena implements ConfigurationSerializable {
     private final Location maxLocation;
     private final ArenaStatus status;
     private final Map<Location, ArenaMarker> markers;
+    private Game game;
+    @Setter
+    private Environment environment;
 
     public Arena(Location minLocation, Location maxLocation) throws ABIDException {
         this(new ABID(), minLocation, maxLocation, ArenaStatus.SETUP, new HashMap<>());
@@ -41,6 +47,16 @@ public class Arena implements ConfigurationSerializable {
         this.maxLocation = maxLocation;
         this.status = status;
         this.markers = markers != null ? markers : new HashMap<>();
+    }
+
+    public void setGame(Game game) {
+        if (this.game != null) {
+            this.game.setArena(null);
+        }
+        this.game = game;
+        if (game != null) {
+            game.setArena(this);
+        }
     }
 
     public boolean contains(Location location) {
