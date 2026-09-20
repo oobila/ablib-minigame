@@ -4,6 +4,7 @@ import com.github.oobila.bukkit.common.utils.model.BlockColor;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.bukkit.configuration.serialization.ConfigurationSerializable;
+import org.bukkit.configuration.serialization.ConfigurationSerialization;
 import org.bukkit.configuration.serialization.SerializableAs;
 import org.jetbrains.annotations.NotNull;
 
@@ -14,6 +15,10 @@ import java.util.Map;
 @Getter
 @SerializableAs("TeamConfig")
 public class TeamConfig implements ConfigurationSerializable {
+
+    static {
+        ConfigurationSerialization.registerClass(TeamConfig.class);
+    }
 
     private final String name;
     private final BlockColor teamColor;

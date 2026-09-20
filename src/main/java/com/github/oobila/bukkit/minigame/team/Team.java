@@ -13,6 +13,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Consumer;
+import java.util.function.ToIntFunction;
 
 @SuppressWarnings("unused")
 @SerializableAs("Team")
@@ -48,6 +50,14 @@ public class Team implements ConfigurationSerializable {
 
     public int getPlayerCount() {
         return players.size();
+    }
+
+    public void forEachPlayer(Consumer<OfflinePlayer> action) {
+        players.forEach(action);
+    }
+
+    public int sumPlayers(ToIntFunction<OfflinePlayer> mapper) {
+        return players.stream().mapToInt(mapper).sum();
     }
 
     @NotNull

@@ -1,220 +1,462 @@
 # ablib-minigame
 
-A generic Bukkit/Spigot library for building minigame plugins. It provides the
-reusable scaffolding — arenas, games, teams, portals, and the environments
-that tie them together — so individual minigame plugins only need to
-implement their own rules on top of it.
+A generic Bukkit/Spigot library for running minigames on a server. It provides
+the reusable scaffolding — environments, arenas, games, teams, and a
+file-driven scripting engine for game rules — so that a single, genre-agnostic
+`Game` implementation can host wildly different minigames (1v1 duels, FFA,
+team deathmatch, checkpoint races, capture the flag, battle royale, ...)
+purely by loading a different config/script, with no new Java code per game
+type.
 
 It is one of the `ablib-*` family of libraries (`ablib-common`,
 `ablib-persistence`, `ablib-command`, `ablib-gui`, `ablib-itemstack`,
 `ablib-chat`), published to JitPack, and depends on those siblings plus
 [`abid`](https://github.com/alastairbooth/abid) for ID generation.
 
-> **Status:** early scaffolding. Several classes below are functional today;
-> others exist only as empty stubs sketching out where a concept will live.
-> Each section says which is which.
+> **Status:** the object model and scripting engine described below are
+> functional and exercised by real (worked-example) scripts for FFA, team
+> deathmatch, and a checkpoint race. What's **not** built yet: nothing drives
+> the engine's tick loop or bridges real Bukkit events (deaths, etc.) into it
+> — that glue is expected to live in the consuming plugin. See "What's not
+> built yet" at the bottom.
 
 ## Core concepts
 
-The library is built around five concepts that map onto how a minigame
-server is actually laid out:
+The object hierarchy is **Environment → Arena → Game**:
 
-- **Arena** — a physical region in the world where a single instance of a
-  game is played.
-- **Game** — the rules and lifecycle for a specific minigame, bound to one
-  Arena.
-- **Team** — a group of players within a Game.
-- **Environment** — the allocated "slot" that links a Game to the portals and
-  other server-facing plumbing so a player can actually get into it.
-- **Portal / GameMarker** — in-world features, loaded from arena schematics,
-  that connect the physical server to these logical objects.
-
-The intended production workflow is: an arena is built and saved as a
-WorldEdit schematic, with `GameMarker` entities placed inside it at
-important locations (spawns, chest points, etc.). WorldGuard protects the
-pasted region. When the schematic is pasted back into the world, the markers
-are read back into memory and turned into the `Arena`'s spawn points, and
-`Portal`s elsewhere on the server are linked to the resulting `Environment`
-so players can be transported in and out.
+- **Environment** — the "slot" that links a `Game` to the rest of the server:
+  it owns the portals players use to get in, an exit location for when they
+  leave, and an open/closed lifecycle (`EnvironmentStatus`).
+- **Arena** — the physical bounding box a game is actually played in, plus
+  whatever `ArenaMarker`s have been placed inside it (spawn points, lobby
+  points, checkpoints). An Environment holds at most one Arena at a time.
+- **Game** — a running match, bound to one Arena. There is exactly one
+  concrete implementation, `ScriptedGame`; every genre difference lives in
+  the `GameConfig`/`GameScript` bound to it, not in a subclass.
+- **GameConfig / GameScript** — the reusable, file-authored template for a
+  game type: which teams it has (if any), how players get assigned to them,
+  and the script of phases/triggers/actions that drives the match from lobby
+  to finish. Many arenas can share the same `GameConfig`.
+- **Team / TeamConfig** — a group of players within a `Game`, and the
+  reusable name/colour/glow config it was built from.
 
 ## Package structure
 
 ```
 com.github.oobila.bukkit.minigame
-├── Minigame.java              — static lookup helpers
-├── build/                     — sequencing arena setup work
-├── commands/                  — /environment and /game command trees
-├── environments/              — Environment, Portal, EnvironmentStatus
-├── game/                      — Arena, Game, Team, GameMarker, ...
-│   └── markers/                 — concrete GameMarker types
-└── gui/                       — inventory GUIs
+├── environments/     — Environment, Portal, EnvironmentStatus
+├── arena/            — Arena, ArenaStatus, ArenaMarker
+│   └── markers/         — concrete ArenaMarker types (spawns, lobbies, checkpoints)
+├── team/             — Team, TeamConfig, TeamAssignment
+├── game/             — Game, ScriptedGame, GameConfig, GameStatus
+│   └── script/           — the phase/trigger/action scripting engine
+│       ├── actions/         — built-in GameAction implementations
+│       └── triggers/        — built-in GameTrigger implementations
+├── items/            — AreaSelectionTool (the in-game arena-marking tool)
+└── build/            — sequencing arena setup work (stub, see below)
 ```
-
-## `game` package
-
-### `Arena` (implemented)
-
-Represents the physical bounding box a game is played in. Holds:
-
-- `id` — an `ABID`, assigned on construction.
-- `minLocation` / `maxLocation` — the two corners of the arena's bounding
-  box (intended to line up with the WorldGuard region protecting it).
-- `status` — an `ArenaStatus`: `SETUP`, `READY`, `IN_USE`, `CLEAN_UP`. This
-  tracks where the arena is in its build/play/teardown cycle, e.g. while a
-  schematic is being pasted vs. while it's safe to hand to a `Game`.
-- `soloSpawns` — spawn points for free-for-all style games.
-- `teamSpawns` — spawn points keyed by team index, for team-based games.
-
-`Arena` implements `ConfigurationSerializable` so instances can be persisted
-directly by Bukkit's config/YAML serialization (and by `ablib-persistence`
-caches). The spawn lists are currently expected to be populated by hand or
-by whatever reads the arena's `GameMarker`s at paste time — there is no
-loader wired up yet.
-
-### `Game` (implemented, abstract)
-
-The base class a specific minigame implementation extends. It owns:
-
-- `id`, `name` — identity.
-- `area` — the `Arena` this instance of the game is bound to.
-- `environment` — the `Environment` currently hosting this game.
-- `status` — a `GameStatus` (`PREPARING`, `READY`, `PRE_GAME_LOBBY`,
-  `IN_PROGRESS`, `POST_GAME_LOBBY`, `ENDED`), defaulting to `PREPARING`.
-  It's settable only by `Game` and its subclasses (not external callers),
-  since a game is expected to transition it itself as it moves through its
-  own lifecycle — `Environment.open()` in particular only proceeds once a
-  bound game reaches `READY`.
-
-Subclasses must implement the lifecycle contract: `open()`, `close()`,
-`forceEnd()`, `canJoin()`, `canRejoin()`, and `getDetailedStatusMessage()`.
-`close()` and `forceEnd()` return `void` — a game is expected to move its
-own `status` through to `ENDED` asynchronously rather than reporting
-success/failure synchronously. `Environment` drives this lifecycle — see
-below. Note that `teams` currently lives on the `TeamDeathmatchGame`
-subclass rather than on the abstract `Game` base.
-
-There is also a `GameInterface` (name, `setup()`, `onStart()`, `onStop()`)
-which is **not yet wired to anything**. It looks like an earlier or
-alternative sketch of the same lifecycle contract now expressed by the
-abstract `Game` class; treat it as unused until it's either connected or
-removed.
-
-### `Team` (implemented)
-
-A named group of `Player`s with a `TeamColor` (`WHITE`, `GRAY`, `RED`,
-`YELLOW`, `GREEN`, `CYAN`, `PINK`), each mapped to an `ablib-common`
-`BlockColor` so teams can be rendered consistently (banners, glass,
-scoreboard tags, etc.). Serializable like `Arena`, though `Player`s
-themselves are naturally excluded from serialization — a `Team` is expected
-to be rebuilt with its players re-added at runtime rather than restored
-from disk with players inside it.
-
-### `ArenaMarker` and `arena.markers.*` (stub)
-
-`ArenaMarker` is meant to be the in-schematic entity type that marks a
-significant location inside an arena — currently just wraps a `Location`.
-`SoloSpawnLocation` (in `arena.markers`) is the first concrete marker type,
-extending `ArenaMarker` to represent a `soloSpawns` entry. Neither class has
-any behaviour yet: nothing scans a pasted schematic for these markers, and
-`ArenaMarker`'s `location` field isn't even exposed. When this is built out,
-the expected shape is a small hierarchy of marker subtypes (solo spawn, team
-spawn, chest point, etc.) that a schematic-paste listener discovers and
-converts into the corresponding fields on `Arena` (and friends).
-
-### `build` package (stub)
-
-`Build` and `BuildStep` sketch a way to sequence the steps involved in
-standing up an arena (e.g. paste schematic → protect with WorldGuard → scan
-`GameMarker`s → mark `Arena` as `READY`). A `BuildStep` wraps an
-`ablib-common` `Job` and tracks `WAITING`/`RUNNING`/`COMPLETE` status; `Build`
-is meant to hold an ordered list of them. Nothing currently constructs or
-runs a `Build`, so treat this as a placeholder for arena-provisioning
-orchestration rather than usable code yet.
 
 ## `environments` package
 
-### `Environment` (implemented)
+### `Environment`
 
-The unit that links a `Game` to the rest of the server. An `Environment`
-has a `status` (`EnvironmentStatus`: `OPEN`, `CLOSING`, `CLOSED`), an
-`exitLocation` (where a player is sent when they leave the game — settable
-via the `/environment exit` command below), a `List<Portal>` of the
-portals attached to it (`addPortal`/`removePortal(ABID)`, managed via the
-`/environment feature` commands below), and holds at most one `Game` at a
-time via `setGame`, which refuses to swap games while the environment
-isn't `CLOSED`.
+Owns at most one `Arena` at a time via `setArena` (refuses to swap while not
+`CLOSED`), an `exitLocation`, and a `List<Portal>`. `open()` requires the
+bound Arena to have a `Game` that has reached `GameStatus.READY`, then calls
+`Game.open()`. `close()` requires the environment to already be `OPEN`, calls
+`Game.close()`, and optimistically moves to `CLOSING` — the `Game` is
+expected to call `notifyClosed()` once its own teardown actually finishes.
 
-`open()` requires the bound `Game` to be non-null and to have reached
-`GameStatus.READY` before it calls `Game.open()`. `close()` requires the
-environment to already be `OPEN`; since `Game.close()` is `void` (fire and
-forget — it can't report success synchronously), `close()` optimistically
-moves the environment straight to `CLOSING` once it's called `Game.close()`,
-and something (the `Game` implementation, once its own teardown actually
-finishes) is expected to call `notifyClosed()` to complete the transition
-to `CLOSED`. This is the object the `/environment` commands and
-`ViewEnvironmentsGui` operate on.
+`EnvironmentStatus` (`OPEN`/`CLOSING`/`CLOSED`) also carries a player-skull
+texture hash per status, for GUI rendering in the consuming plugin.
 
-`EnvironmentStatus` also carries a `texture` per status — a player-skull
-texture hash used by `ViewEnvironmentsGui` so open/closing/closed
-environments render with a different head icon in the GUI.
+### `Portal`
 
-### `Portal` (partially implemented)
+An in-world, always-present feature (a `minLocation`/`maxLocation` bounding
+box, mirroring `Arena`) that teleports a player into an `Environment`. Fully
+`ConfigurationSerializable`. An `Environment` owns the list of `Portal`s
+attached to it; nothing yet performs the actual teleport (that's plugin-side
+listener work).
 
-Intended to represent an in-world portal that teleports a player to an
-`Environment`'s lobby or an `Arena`'s spawn point, analogous to
-`ArenaMarker` but for player-facing, always-present world features rather
-than arena-internal schematic content. Its physical footprint is a
-`minLocation`/`maxLocation` bounding box (mirroring `Arena`), rather than an
-arbitrary set of blocks, and is fully serializable via
-`ConfigurationSerializable`. An `Environment` now owns a
-list of the `Portal`s attached to it (see above), but nothing yet points
-the other way — a `Portal` doesn't yet know which `Environment` it should
-send a player into, and nothing actually performs the teleport.
+## `arena` package
 
-## `commands` package (implemented)
+### `Arena`
 
-`EnvironmentCommand` is the `/environment` command tree (registered by the
-consuming plugin), with subcommands:
+The physical bounding box a game is played in: `minLocation`/`maxLocation`,
+an `ArenaStatus` (`SETUP`/`READY`/`IN_USE`/`CLEAN_UP`), a `Map<Location,
+ArenaMarker>`, and (not final) a `game`/`environment` pair of back-references.
+`getMarkers(Class<T>)` filters the marker map by concrete type. `setGame`
+wires the bidirectional Arena↔Game link.
 
-| Subcommand | Aliases | Behaviour |
+`Arena` persists its bound `Game` inline when one is set (nested
+`ConfigurationSerializable`, same pattern `Team` uses for `TeamConfig`) — so
+an in-progress match survives a server restart for free via whatever cache
+the consuming plugin already stores Arenas in, with no separate game cache
+needed.
+
+### `ArenaMarker` and `arena.markers.*`
+
+`ArenaMarker` wraps a `Location` plus a free-form `Map<String,String>
+metadata` bag, and is the common base every concrete marker type extends.
+Current marker types:
+
+| Marker | Purpose |
+|---|---|
+| `SoloSpawnLocation` | Where an FFA/team-less player spawns |
+| `TeamSpawnLocation` | Where a team spawns, matched to a `TeamConfig` by `BlockColor` |
+| `PreGameLobbySpawn` | Where players wait before a match starts |
+| `PostGameLobbySpawn` | Where players go once a match ends |
+| `CheckpointMarker` | An ordered (`order`) waypoint for a checkpoint race |
+
+Nothing yet scans a pasted schematic for these — they're expected to be
+placed by hand (or by whatever the `items.AreaSelectionTool` workflow grows
+into) until that's built out.
+
+## `team` package
+
+`TeamConfig` (`name`, `teamColor: BlockColor`, `isGlowing`) is the reusable,
+file-authored description of a team. `Team` is the runtime instance: a
+`TeamConfig` plus a live roster of `OfflinePlayer`s (`addPlayer`/
+`removePlayer`/`hasPlayer`/`getPlayerCount`/`forEachPlayer`/`sumPlayers`) —
+deliberately no raw list getter, so nothing outside `Team` can mutate the
+roster except through those methods. `addPlayer`/`removePlayer` also toggle
+glowing if `isGlowing` is set. `TeamAssignment` is currently just `RANDOM`.
+
+## `game` package
+
+### `Game` (abstract) and `ScriptedGame`
+
+`Game` owns identity (`id`, `name`), its bound `arena`/`gameConfig`, a
+`GameStatus` (`PREPARING → READY → PRE_GAME_LOBBY → IN_PROGRESS →
+POST_GAME_LOBBY → ENDED`), its `teams`, `players`, per-player `scores`, and
+an `eliminated` set. It provides the primitives every game mode needs
+regardless of genre:
+
+- `addScore`/`getScore` (per player) and `getTeamScore` (derived by summing
+  a team's members) — this one primitive covers kill counts, team kill
+  aggregates, *and* "checkpoints passed" (see the race example below).
+- `eliminate`/`isEliminated`/`getActivePlayers`/`getActiveTeams`.
+- `getLeadingPlayer`/`getLeadingTeam` (highest score) for announcing a
+  winner.
+- `transitionTo(GameStatus)` — moves to a new phase and runs that phase's
+  `onEnter` actions (see `game.script` below).
+- `tick()` / `fireEvent(GameEventContext)` — evaluates the current phase's
+  triggers against an event key (`"tick"`, `"death"`, ...). Nothing calls
+  these yet; see "What's not built yet".
+
+`join`/`leave` are generic framework behaviour (not script-driven): if teams
+already exist and the game is `IN_PROGRESS`, a joining player is added to
+whichever team currently has the fewest players, and a leaving player is
+removed from whichever team they were on.
+
+`ScriptedGame` is the single concrete `Game`. Its lifecycle methods
+(`open`/`close`/`forceEnd`/`canJoin`/`canRejoin`) are just thin wrappers
+around `transitionTo`/status checks — there is deliberately nothing
+game-specific in this class.
+
+### `GameConfig`
+
+The reusable template: `teams: List<TeamConfig>`, `teamAssignment`, and the
+`GameScript` that drives the match. `ConfigurationSerializable`, so it can be
+hand-authored as YAML (see the worked example below) or built by a command
+in the consuming plugin.
+
+## `game.script` package — the scripting engine
+
+This is how a game's rules are "100% on file, not code": a `GameScript` is a
+`Map<GameStatus, GamePhaseScript>`. Each `GamePhaseScript` has:
+
+- `onEnter: List<ActionBinding>` — actions that always run once, the moment
+  that phase is entered (e.g. teleport everyone to lobby markers).
+- `triggers: List<TriggerBinding>` — each pairs a named `GameTrigger` (with
+  its own config `attributes`) to a list of `ActionBinding`s that run when
+  it matches. A binding only reacts to one event key (`event: tick`,
+  `event: death`, ...) and, unless `repeatable: true`, only fires once per
+  phase entry (its `fired` flag resets whenever the phase is re-entered) —
+  this is what stops a win condition from re-firing every tick once true.
+
+`GameAction`/`GameTrigger` are plain interfaces
+(`run(Game, GameActionAttributes, GameEventContext)` /
+`test(Game, GameActionAttributes, GameEventContext)`); implementations are
+looked up purely by string key via `GameActionRegistry`/
+`GameTriggerRegistry`, never referenced by class from a script. Nothing
+persists an `Attributes` object as its own `ConfigurationSerializable` type —
+it's a plain `Map<String, Object>` nested directly under the binding, so
+hand-written YAML doesn't need an extra `==:` marker, and unquoted numbers/
+booleans are coerced to the right type on read.
+
+A consuming plugin must call `BuiltInGameScript.register()` once at startup
+(before loading any saved games/scripts) to populate both registries.
+
+### Built-in actions (`game.script.actions`)
+
+| Key | Attributes | Effect |
 |---|---|---|
-| `create <name>` | | Creates a new `Environment`, rejecting duplicate names. |
-| `open <name>` | `o` | Opens the named environment if it's `CLOSED`. |
-| `close <name>` | `c` | Closes the named environment if it's `OPEN`. |
-| `remove <name>` | `delete`, `r` | Deletes the environment, only while `CLOSED`. |
-| `exit <name>` | `e` | Sets the environment's `exitLocation` to the command sender's current location. Player-only. |
-| `feature add portal <name>` | | Creates a new `Portal` and attaches it to the named environment; reports the portal's generated id. |
-| `feature remove portal <name>` | | Removes every `Portal` from the named environment. |
-| `view` | `v` | Opens `ViewEnvironmentsGui`, listing all environments. |
+| `assign-teams` | — | Builds one `Team` per `TeamConfig` in the `GameConfig`, then (if `teamAssignment: RANDOM`) shuffles and round-robins current players across them. No-op for team-less configs. |
+| `teleport-to-marker` | `marker`: `solo-spawn` (default, round-robin) / `team-spawn` (matched by colour) / `pre-game-lobby` / `post-game-lobby` | Teleports players to the matching `ArenaMarker`(s). |
+| `award-score` | `who` (context key, default `player`), `amount` (default 1), `friendlyFire` (default true), `against` (context key) | Adds to a player's score; if `friendlyFire: false` and `who`/`against` are on the same team, does nothing. |
+| `eliminate` | `who` (context key, default `player`) | Marks a player eliminated. |
+| `transition-phase` | `phase` | Moves the game to another `GameStatus`. |
+| `end-game` | — | Shorthand for `transition-phase(phase: POST_GAME_LOBBY)`. |
+| `announce-winner` | `target`: `player` (default) / `team` | Sends everyone a "wins!" message for the current leader, via `ablib-chat`'s `Message`. |
+| `broadcast-message` | `message` | Sends literal text to every current participant, via `ablib-chat`. |
 
-`feature` is itself a small command tree (`EnvironmentFeature` →
-`EnvironmentFeatureAdd`/`EnvironmentFeatureRemove` → a per-feature-type
-command such as `EnvironmentFeatureAddPortal`), deliberately structured so
-that adding a new attachable feature type in future is one more subcommand
-registered under `add`/`remove`, rather than a change to existing commands.
+### Built-in triggers (`game.script.triggers`)
 
-All subcommands operate against a `ReadAndWriteCache<ABID, Environment>`
-(from `ablib-persistence`) passed in by the consuming plugin, which is the
-source of truth for which environments exist. `CommandUtils` holds the
-shared name-lookup and tab-completion helpers used across these commands.
+| Key | Attributes | Fires when |
+|---|---|---|
+| `always` | — | Unconditionally (for events where the point is just reacting, e.g. every death). |
+| `time-elapsed` | `seconds` (default 60) | The current phase has been active at least this long. Doubles as a lobby countdown and a time-limit win condition. |
+| `score-threshold` | `threshold` (default 1), `target`: `player` (default) / `team` | Any player/team's score reaches the threshold. Also the finish line for a checkpoint race (`threshold` = number of checkpoints). |
+| `last-entity-standing` | `target`: `player` (default) / `team` | Only one non-eliminated player/team remains, out of more than one starter. |
+| `checkpoint-proximity` | `radius` (default 2.0) | Per active player: advances their score by one if they're within `radius` of the `CheckpointMarker` matching their current score (i.e. their next checkpoint). Side-effecting, not just a test. |
 
-`GameCommand` is a placeholder — it registers the `/game` command with no
-subcommands yet.
+## Example: a team deathmatch script
 
-## `gui` package (implemented)
+This is exactly what `GameConfig#serialize()` writes (and `#deserialize()`
+reads back) for a 2-team, first-to-20-kills-or-10-minutes deathmatch:
 
-`ViewEnvironmentsGui` is an `ablib-gui` `SimpleGui` listing every
-`Environment` as a player-head button: the head texture reflects
-`EnvironmentStatus`, and the lore shows the environment's ID, status, and
-bound game name (or `NO GAME`).
+```yaml
+==: GameConfig
+teams:
+- ==: TeamConfig
+  name: Red
+  teamColor: RED
+  isGlowing: false
+- ==: TeamConfig
+  name: Blue
+  teamColor: BLUE
+  isGlowing: false
+teamAssignment: RANDOM
+script:
+  ==: GameScript
+  name: team-deathmatch
+  phases:
+    PRE_GAME_LOBBY:
+      ==: GamePhaseScript
+      onEnter:
+      - ==: ActionBinding
+        actionKey: assign-teams
+        attributes: {}
+      - ==: ActionBinding
+        actionKey: teleport-to-marker
+        attributes:
+          marker: pre-game-lobby
+      triggers:
+      - ==: TriggerBinding
+        event: tick
+        triggerKey: time-elapsed
+        attributes:
+          seconds: 20
+        repeatable: false
+        actions:
+        - ==: ActionBinding
+          actionKey: transition-phase
+          attributes:
+            phase: IN_PROGRESS
+    IN_PROGRESS:
+      ==: GamePhaseScript
+      onEnter:
+      - ==: ActionBinding
+        actionKey: teleport-to-marker
+        attributes:
+          marker: team-spawn
+      triggers:
+      - ==: TriggerBinding
+        event: death
+        triggerKey: always
+        attributes: {}
+        repeatable: true
+        actions:
+        - ==: ActionBinding
+          actionKey: award-score
+          attributes:
+            who: killer
+            against: victim
+            friendlyFire: false
+            amount: 1
+      - ==: TriggerBinding
+        event: tick
+        triggerKey: score-threshold
+        attributes:
+          target: team
+          threshold: 20
+        repeatable: false
+        actions:
+        - ==: ActionBinding
+          actionKey: end-game
+          attributes: {}
+        - ==: ActionBinding
+          actionKey: announce-winner
+          attributes:
+            target: team
+      - ==: TriggerBinding
+        event: tick
+        triggerKey: time-elapsed
+        attributes:
+          seconds: 600
+        repeatable: false
+        actions:
+        - ==: ActionBinding
+          actionKey: end-game
+          attributes: {}
+        - ==: ActionBinding
+          actionKey: announce-winner
+          attributes:
+            target: team
+    POST_GAME_LOBBY:
+      ==: GamePhaseScript
+      onEnter:
+      - ==: ActionBinding
+        actionKey: teleport-to-marker
+        attributes:
+          marker: post-game-lobby
+      - ==: ActionBinding
+        actionKey: broadcast-message
+        attributes:
+          message: Game over! Returning to the lobby shortly...
+      triggers:
+      - ==: TriggerBinding
+        event: tick
+        triggerKey: time-elapsed
+        attributes:
+          seconds: 10
+        repeatable: false
+        actions:
+        - ==: ActionBinding
+          actionKey: transition-phase
+          attributes:
+            phase: ENDED
+```
 
-## `Minigame` (implemented)
+Note the `death` binding is `repeatable: true` (every death should count) while
+every win-condition binding is `repeatable: false` (fire once, end the game,
+don't re-fire on the next tick) and the score and time-limit conditions race
+each other — whichever hits first ends the match.
 
-A small static lookup facade — `getCurrentGame(Player)` and
-`getTeam(Player)` — that scans a static `environments` list to find which
-game/team a player currently belongs to. Note `Minigame.environments` is
-never assigned anywhere in the library yet; a consuming plugin (or a future
-initializer) needs to set it before these lookups will return anything.
+### The same shape for FFA and a checkpoint race
+
+Only the `IN_PROGRESS` phase (and whether `teams`/`assign-teams` are present
+at all) actually changes between game types — `PRE_GAME_LOBBY`/
+`POST_GAME_LOBBY` above are reusable as-is.
+
+**FFA** — no `teams` in the `GameConfig`, spawn on `solo-spawn` instead of
+`team-spawn`, `award-score` defaults (`who: killer`, no `against`/
+`friendlyFire`), and win on either threshold:
+
+```yaml
+IN_PROGRESS:
+  ==: GamePhaseScript
+  onEnter:
+  - ==: ActionBinding
+    actionKey: teleport-to-marker
+    attributes:
+      marker: solo-spawn
+  triggers:
+  - ==: TriggerBinding
+    event: death
+    triggerKey: always
+    attributes: {}
+    repeatable: true
+    actions:
+    - ==: ActionBinding
+      actionKey: award-score
+      attributes:
+        who: killer
+  - ==: TriggerBinding
+    event: tick
+    triggerKey: score-threshold
+    attributes:
+      threshold: 10
+    repeatable: false
+    actions:
+    - ==: ActionBinding
+      actionKey: end-game
+      attributes: {}
+    - ==: ActionBinding
+      actionKey: announce-winner
+      attributes: {}
+  - ==: TriggerBinding
+    event: tick
+    triggerKey: last-entity-standing
+    attributes: {}
+    repeatable: false
+    actions:
+    - ==: ActionBinding
+      actionKey: end-game
+      attributes: {}
+    - ==: ActionBinding
+      actionKey: announce-winner
+      attributes: {}
+```
+
+**Checkpoint race** — also no `teams`; score *is* checkpoint progress, so the
+win condition is just a `score-threshold` set to the arena's checkpoint count:
+
+```yaml
+IN_PROGRESS:
+  ==: GamePhaseScript
+  onEnter:
+  - ==: ActionBinding
+    actionKey: teleport-to-marker
+    attributes:
+      marker: solo-spawn
+  triggers:
+  - ==: TriggerBinding
+    event: tick
+    triggerKey: checkpoint-proximity
+    attributes:
+      radius: 3
+    repeatable: true
+    actions: []
+  - ==: TriggerBinding
+    event: tick
+    triggerKey: score-threshold
+    attributes:
+      threshold: 5
+    repeatable: false
+    actions:
+    - ==: ActionBinding
+      actionKey: end-game
+      attributes: {}
+    - ==: ActionBinding
+      actionKey: announce-winner
+      attributes: {}
+```
+
+## `items` package
+
+`AreaSelectionTool` is a wand item (left/right click to mark two corners)
+used when creating an `Arena` from the current selection.
+
+## `build` package (stub)
+
+`Build`/`BuildStep` sketch a way to sequence arena-provisioning steps (paste
+schematic → protect region → scan markers → mark `Arena` READY), wrapping an
+`ablib-common` `Job` per step. Nothing currently constructs or runs a
+`Build`.
+
+## What's not built yet
+
+- **Nothing calls `Game.tick()` or bridges real Bukkit events into
+  `fireEvent`.** A consuming plugin needs to: run a repeating task that calls
+  `tick()` on every active game, and register a `PlayerDeathEvent` listener
+  that finds which game a dying player belongs to and calls
+  `fireEvent(new GameEventContext(GameEventContext.DEATH, Map.of("player",
+  victim, "killer", killer, "victim", victim)))` — note `award-score`/
+  `eliminate` default their `who` attribute to the context key `"player"`,
+  so a plain "eliminate on death" binding needs no attributes, while
+  "award the killer" needs `who: killer` explicitly.
+- **No command wires a `GameConfig`/`GameScript` file to an arena** — right
+  now these objects exist and (de)serialize correctly, but something in the
+  consuming plugin needs to load/author them (e.g. via a
+  `SimpleFileCache<String, GameConfig>` from `ablib-persistence`, keyed by a
+  chosen template name so many arenas can share one) and call
+  `arena.setGame(new ScriptedGame(name))` /
+  `game.setGameConfig(theLoadedConfig)`.
+- Gameplay-critical custom blocks (a CTF flag, a BR supply crate) and a
+  battle-royale shrinking world border are intentionally deferred — see the
+  design discussion this library grew out of.
 
 ## Build
 

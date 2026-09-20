@@ -59,6 +59,14 @@ public class Arena implements ConfigurationSerializable {
         }
     }
 
+    @SuppressWarnings("unchecked")
+    public <T extends ArenaMarker> List<T> getMarkers(Class<T> type) {
+        return markers.values().stream()
+                .filter(type::isInstance)
+                .map(marker -> (T) marker)
+                .toList();
+    }
+
     public boolean contains(Location location) {
         if (location.getWorld() == null || !location.getWorld().equals(minLocation.getWorld())) {
             return false;
@@ -85,18 +93,25 @@ public class Arena implements ConfigurationSerializable {
         // Location isn't a valid config-section key, so markers are flattened to a
         // list here and re-keyed by their own location on the way back in.
         map.put("markers", new ArrayList<>(markers.values()));
+        if (game != null) {
+            map.put("game", game);
+        }
         return map;
     }
 
     @NotNull
     public static Arena deserialize(@NotNull Map<String, Object> args) {
-        return new Arena(
+        Arena arena = new Arena(
                 ABID.fromString((String) args.get("id")),
                 (Location) args.get("minLocation"),
                 (Location) args.get("maxLocation"),
                 ArenaStatus.valueOf((String) args.get("status")),
                 extractMarkers(args)
         );
+        if (args.get("game") instanceof Game game) {
+            arena.setGame(game);
+        }
+        return arena;
     }
 
     @NotNull
