@@ -58,7 +58,9 @@ public class Environment implements ConfigurationSerializable {
             this.arena.setEnvironment(null);
         }
         this.arena = arena;
-        arena.setEnvironment(this);
+        if (arena != null) {
+            arena.setEnvironment(this);
+        }
         return true;
     }
 
@@ -76,8 +78,11 @@ public class Environment implements ConfigurationSerializable {
         if (!status.equals(EnvironmentStatus.OPEN)) {
             return false;
         }
-        arena.getGame().close();
+        // status must flip to CLOSING before calling Game#close(), not after: a synchronous
+        // close() implementation calls notifyClosed() immediately, which only takes effect
+        // while status is already CLOSING - otherwise it's a no-op and this never reaches CLOSED.
         status = EnvironmentStatus.CLOSING;
+        arena.getGame().close();
         return true;
     }
 

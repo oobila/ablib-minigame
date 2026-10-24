@@ -1,7 +1,6 @@
 package com.github.oobila.bukkit.minigame.game;
 
 import com.github.oobila.bukkit.minigame.game.script.GameScript;
-import com.github.oobila.bukkit.minigame.team.TeamAssignment;
 import com.github.oobila.bukkit.minigame.team.TeamConfig;
 import lombok.Getter;
 import org.bukkit.configuration.serialization.ConfigurationSerializable;
@@ -15,9 +14,12 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * The reusable, file-authored template for a game type: what teams it has (if any), how
- * players get assigned to them, and the {@link GameScript} that drives the match. An Arena
- * is paired with a GameConfig to produce a runnable {@code Game}.
+ * The reusable, file-authored template for a game type: what teams it has (if any), whether a
+ * new player can join once the match is already {@code IN_PROGRESS}, and the {@link GameScript}
+ * that drives the match. An Arena is paired with a GameConfig to produce a runnable
+ * {@code Game}. There is deliberately no "how are players assigned to teams" field here - that
+ * rule (smallest team, always the underdog side, ...) is expressed as whichever {@code GameAction}
+ * a script binds to the {@code join} event, since different game types need different rules.
  */
 @Getter
 @SerializableAs("GameConfig")
@@ -28,12 +30,12 @@ public class GameConfig implements ConfigurationSerializable {
     }
 
     private final List<TeamConfig> teams;
-    private final TeamAssignment teamAssignment;
+    private final boolean midSessionJoinAllowed;
     private final GameScript script;
 
-    public GameConfig(List<TeamConfig> teams, TeamAssignment teamAssignment, GameScript script) {
+    public GameConfig(List<TeamConfig> teams, boolean midSessionJoinAllowed, GameScript script) {
         this.teams = teams != null ? teams : new ArrayList<>();
-        this.teamAssignment = teamAssignment;
+        this.midSessionJoinAllowed = midSessionJoinAllowed;
         this.script = script;
     }
 
@@ -42,9 +44,7 @@ public class GameConfig implements ConfigurationSerializable {
     public Map<String, Object> serialize() {
         Map<String, Object> map = new HashMap<>();
         map.put("teams", new ArrayList<>(teams));
-        if (teamAssignment != null) {
-            map.put("teamAssignment", teamAssignment.name());
-        }
+        map.put("midSessionJoinAllowed", midSessionJoinAllowed);
         if (script != null) {
             map.put("script", script);
         }
@@ -63,8 +63,10 @@ public class GameConfig implements ConfigurationSerializable {
                 }
             }
         }
-        Object rawAssignment = args.get("teamAssignment");
-        TeamAssignment teamAssignment = rawAssignment != null ? TeamAssignment.valueOf((String) rawAssignment) : null;
-        return new GameConfig(teams, teamAssignment, (GameScript) args.get("script"));
+        return new GameConfig(
+                teams,
+                Boolean.TRUE.equals(args.get("midSessionJoinAllowed")),
+                (GameScript) args.get("script")
+        );
     }
 }

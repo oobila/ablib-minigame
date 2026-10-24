@@ -67,14 +67,12 @@ public abstract class Game implements ConfigurationSerializable {
         this.phaseEnteredAt = phaseEnteredAt;
     }
 
+    // Team assignment isn't handled here: it happens via whichever GameAction a script binds to
+    // the "join" event that onJoin(player) fires below, since the rule for who goes on which
+    // team (smallest team, always the underdog side, ...) differs by game type.
     public void join(Player player) {
         players.add(player);
         onJoin(player);
-        if (status == GameStatus.IN_PROGRESS && !teams.isEmpty()) {
-            teams.stream()
-                    .min(Comparator.comparingInt(Team::getPlayerCount))
-                    .ifPresent(team -> team.addPlayer(player));
-        }
     }
 
     public void leave(OfflinePlayer player) {

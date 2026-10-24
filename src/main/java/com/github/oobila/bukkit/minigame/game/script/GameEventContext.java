@@ -16,6 +16,7 @@ public class GameEventContext {
     public static final String DEATH = "death";
     public static final String JOIN = "join";
     public static final String LEAVE = "leave";
+    public static final String COMMAND = "command";
 
     private final String key;
     private final Map<String, Object> data;

@@ -37,9 +37,15 @@ public class ScriptedGame extends Game {
         super(id, name, arena, status, gameConfig, teams, players, scores, eliminated, phaseEnteredAt);
     }
 
+    // Environment#close() moves to CLOSING and waits for the bound game to call
+    // notifyClosed() once its own teardown is done; ScriptedGame's teardown is synchronous,
+    // so it can call straight back through Arena's environment back-reference.
     @Override
     public void close() {
         transitionTo(GameStatus.ENDED);
+        if (getArena() != null && getArena().getEnvironment() != null) {
+            getArena().getEnvironment().notifyClosed();
+        }
     }
 
     @Override
@@ -58,7 +64,12 @@ public class ScriptedGame extends Game {
 
     @Override
     public boolean canJoin() {
-        return getStatus() == GameStatus.READY || getStatus() == GameStatus.PRE_GAME_LOBBY;
+        if (getStatus() == GameStatus.READY || getStatus() == GameStatus.PRE_GAME_LOBBY) {
+            return true;
+        }
+        return getStatus() == GameStatus.IN_PROGRESS
+                && getGameConfig() != null
+                && getGameConfig().isMidSessionJoinAllowed();
     }
 
     @Override

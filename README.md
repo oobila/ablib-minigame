@@ -14,11 +14,15 @@ It is one of the `ablib-*` family of libraries (`ablib-common`,
 [`abid`](https://github.com/alastairbooth/abid) for ID generation.
 
 > **Status:** the object model and scripting engine described below are
-> functional and exercised by real (worked-example) scripts for FFA, team
-> deathmatch, and a checkpoint race. What's **not** built yet: nothing drives
-> the engine's tick loop or bridges real Bukkit events (deaths, etc.) into it
-> — that glue is expected to live in the consuming plugin. See "What's not
-> built yet" at the bottom.
+> functional, exercised by real (worked-example) scripts for FFA, team
+> deathmatch, and a checkpoint race, and driven end-to-end by the
+> `ab-minigame` plugin (tick loop, death-event bridge, commands, GUIs). See
+> "What's not built yet" at the bottom for what's still missing.
+>
+> **This checkout is ahead of the last published release (`1.2.0`)** —
+> several fixes and the `command` trigger described below aren't in that jar
+> yet. See `ab-minigame`'s README ("Release status") for the exact list and
+> what needs releasing before the plugin builds against it again.
 
 ## Core concepts
 
@@ -34,9 +38,10 @@ The object hierarchy is **Environment → Arena → Game**:
   concrete implementation, `ScriptedGame`; every genre difference lives in
   the `GameConfig`/`GameScript` bound to it, not in a subclass.
 - **GameConfig / GameScript** — the reusable, file-authored template for a
-  game type: which teams it has (if any), how players get assigned to them,
-  and the script of phases/triggers/actions that drives the match from lobby
-  to finish. Many arenas can share the same `GameConfig`.
+  game type: which teams it has (if any), whether a new player can join once
+  the match is already running, and the script of phases/triggers/actions
+  that drives the match from lobby to finish. Many arenas can share the same
+  `GameConfig`.
 - **Team / TeamConfig** — a group of players within a `Game`, and the
   reusable name/colour/glow config it was built from.
 
@@ -47,7 +52,7 @@ com.github.oobila.bukkit.minigame
 ├── environments/     — Environment, Portal, EnvironmentStatus
 ├── arena/            — Arena, ArenaStatus, ArenaMarker
 │   └── markers/         — concrete ArenaMarker types (spawns, lobbies, checkpoints)
-├── team/             — Team, TeamConfig, TeamAssignment
+├── team/             — Team, TeamConfig
 ├── game/             — Game, ScriptedGame, GameConfig, GameStatus
 │   └── script/           — the phase/trigger/action scripting engine
 │       ├── actions/         — built-in GameAction implementations
@@ -120,7 +125,7 @@ file-authored description of a team. `Team` is the runtime instance: a
 `removePlayer`/`hasPlayer`/`getPlayerCount`/`forEachPlayer`/`sumPlayers`) —
 deliberately no raw list getter, so nothing outside `Team` can mutate the
 roster except through those methods. `addPlayer`/`removePlayer` also toggle
-glowing if `isGlowing` is set. `TeamAssignment` is currently just `RANDOM`.
+glowing if `isGlowing` is set.
 
 ## `game` package
 
@@ -144,22 +149,36 @@ regardless of genre:
   triggers against an event key (`"tick"`, `"death"`, ...). Nothing calls
   these yet; see "What's not built yet".
 
-`join`/`leave` are generic framework behaviour (not script-driven): if teams
-already exist and the game is `IN_PROGRESS`, a joining player is added to
-whichever team currently has the fewest players, and a leaving player is
-removed from whichever team they were on.
+`join(Player)` adds the player and fires a `join` event through the script
+engine (`leave(OfflinePlayer)` fires `leave`, and separately removes them
+from whatever team they were on - that part isn't rule-dependent the way
+joining is, so it stays generic framework behaviour). Team assignment on
+join is deliberately *not* hardcoded here: which team a new player gets
+(smallest team, always the underdog side, ...) differs by game type, so it's
+whichever `GameAction` a script binds to the `join` event - see
+`assign-smallest-team` below. `canJoin()`/`canRejoin()` are genre-specific
+(implemented by `ScriptedGame`) and are the caller's responsibility to check
+before calling `join`/consulting rejoin logic - `Game.join()` itself doesn't
+gate on them.
 
 `ScriptedGame` is the single concrete `Game`. Its lifecycle methods
-(`open`/`close`/`forceEnd`/`canJoin`/`canRejoin`) are just thin wrappers
-around `transitionTo`/status checks — there is deliberately nothing
-game-specific in this class.
+(`open`/`close`/`forceEnd`/`canRejoin`) are just thin wrappers around
+`transitionTo`/status checks — there is deliberately nothing game-specific
+in this class. `canJoin()` is the one exception with real logic: it's always
+true during `READY`/`PRE_GAME_LOBBY`, and during `IN_PROGRESS` it defers to
+the bound `GameConfig`'s `midSessionJoinAllowed` flag - false by default, so
+a game type has to opt in to accepting new players once a match is already
+running.
 
 ### `GameConfig`
 
-The reusable template: `teams: List<TeamConfig>`, `teamAssignment`, and the
-`GameScript` that drives the match. `ConfigurationSerializable`, so it can be
-hand-authored as YAML (see the worked example below) or built by a command
-in the consuming plugin.
+The reusable template: `teams: List<TeamConfig>`, `midSessionJoinAllowed`
+(default false), and the `GameScript` that drives the match.
+`ConfigurationSerializable`, so it can be hand-authored as YAML (see the
+worked example below) or built by a command in the consuming plugin. There
+is deliberately no "assignment strategy" field here - see `join`/`leave`
+above and `assign-smallest-team` below for why that's a script concern, not
+a config flag.
 
 ## `game.script` package — the scripting engine
 
@@ -192,7 +211,8 @@ A consuming plugin must call `BuiltInGameScript.register()` once at startup
 
 | Key | Attributes | Effect |
 |---|---|---|
-| `assign-teams` | — | Builds one `Team` per `TeamConfig` in the `GameConfig`, then (if `teamAssignment: RANDOM`) shuffles and round-robins current players across them. No-op for team-less configs. |
+| `create-teams` | — | Builds one empty `Team` per `TeamConfig` in the `GameConfig`. Doesn't put any players on them - that's `assign-smallest-team`'s job, per player, at join time. No-op for team-less configs. |
+| `assign-smallest-team` | `who` (context key, default `player`) | Puts the joining player on whichever team currently has the fewest members. Bind this to the `join` event. A game type with a different rule (e.g. one team of 1 versus everyone else) binds a different action instead - this is exactly the pluggable "rule set" the join event exists for. |
 | `teleport-to-marker` | `marker`: `solo-spawn` (default, round-robin) / `team-spawn` (matched by colour) / `pre-game-lobby` / `post-game-lobby` | Teleports players to the matching `ArenaMarker`(s). |
 | `award-score` | `who` (context key, default `player`), `amount` (default 1), `friendlyFire` (default true), `against` (context key) | Adds to a player's score; if `friendlyFire: false` and `who`/`against` are on the same team, does nothing. |
 | `eliminate` | `who` (context key, default `player`) | Marks a player eliminated. |
@@ -205,8 +225,9 @@ A consuming plugin must call `BuiltInGameScript.register()` once at startup
 
 | Key | Attributes | Fires when |
 |---|---|---|
-| `always` | — | Unconditionally (for events where the point is just reacting, e.g. every death). |
+| `always` | — | Unconditionally (for events where the point is just reacting, e.g. every death, or every join). |
 | `time-elapsed` | `seconds` (default 60) | The current phase has been active at least this long. Doubles as a lobby countdown and a time-limit win condition. |
+| `command` | `name` (default `""`) | Bound to a `GameEventContext.COMMAND` event whose own `name` matches this binding's `name` (both default to `""`, so a script that doesn't care about naming can omit it on both sides). An alternative to `time-elapsed` for phases that should advance on an operator's say-so instead of a fixed countdown - see `ab-minigame`'s `/minigame game trigger` command, which is what actually fires the event. |
 | `score-threshold` | `threshold` (default 1), `target`: `player` (default) / `team` | Any player/team's score reaches the threshold. Also the finish line for a checkpoint race (`threshold` = number of checkpoints). |
 | `last-entity-standing` | `target`: `player` (default) / `team` | Only one non-eliminated player/team remains, out of more than one starter. |
 | `checkpoint-proximity` | `radius` (default 2.0) | Per active player: advances their score by one if they're within `radius` of the `CheckpointMarker` matching their current score (i.e. their next checkpoint). Side-effecting, not just a test. |
@@ -214,7 +235,8 @@ A consuming plugin must call `BuiltInGameScript.register()` once at startup
 ## Example: a team deathmatch script
 
 This is exactly what `GameConfig#serialize()` writes (and `#deserialize()`
-reads back) for a 2-team, first-to-20-kills-or-10-minutes deathmatch:
+reads back) for a 2-team, first-to-20-kills-or-10-minutes deathmatch that
+also accepts new players mid-session:
 
 ```yaml
 ==: GameConfig
@@ -227,7 +249,7 @@ teams:
   name: Blue
   teamColor: BLUE
   isGlowing: false
-teamAssignment: RANDOM
+midSessionJoinAllowed: true
 script:
   ==: GameScript
   name: team-deathmatch
@@ -236,7 +258,7 @@ script:
       ==: GamePhaseScript
       onEnter:
       - ==: ActionBinding
-        actionKey: assign-teams
+        actionKey: create-teams
         attributes: {}
       - ==: ActionBinding
         actionKey: teleport-to-marker
@@ -254,6 +276,17 @@ script:
           actionKey: transition-phase
           attributes:
             phase: IN_PROGRESS
+      # players who join during the lobby need putting on a team too - the same
+      # binding is repeated under IN_PROGRESS below, since midSessionJoinAllowed is true
+      - ==: TriggerBinding
+        event: join
+        triggerKey: always
+        attributes: {}
+        repeatable: true
+        actions:
+        - ==: ActionBinding
+          actionKey: assign-smallest-team
+          attributes: {}
     IN_PROGRESS:
       ==: GamePhaseScript
       onEnter:
@@ -262,6 +295,15 @@ script:
         attributes:
           marker: team-spawn
       triggers:
+      - ==: TriggerBinding
+        event: join
+        triggerKey: always
+        attributes: {}
+        repeatable: true
+        actions:
+        - ==: ActionBinding
+          actionKey: assign-smallest-team
+          attributes: {}
       - ==: TriggerBinding
         event: death
         triggerKey: always
@@ -329,16 +371,48 @@ script:
             phase: ENDED
 ```
 
-Note the `death` binding is `repeatable: true` (every death should count) while
-every win-condition binding is `repeatable: false` (fire once, end the game,
-don't re-fire on the next tick) and the score and time-limit conditions race
-each other — whichever hits first ends the match.
+Note the `death`/`join` bindings are `repeatable: true` (every death/join should
+count) while every win-condition binding is `repeatable: false` (fire once, end
+the game, don't re-fire on the next tick) and the score and time-limit
+conditions race each other — whichever hits first ends the match. Also note
+the `join` binding is duplicated across `PRE_GAME_LOBBY` and `IN_PROGRESS`:
+bindings are scoped to one phase, so a rule that should apply in both needs
+repeating (a template could legitimately want *different* join rules per
+phase, so this isn't just boilerplate to eliminate).
+
+### Waiting on a command instead of a timer
+
+Swap the `PRE_GAME_LOBBY` phase's `time-elapsed` binding above for a
+`command` one to make it wait for an operator to say "go" instead of a fixed
+countdown:
+
+```yaml
+- ==: TriggerBinding
+  event: command
+  triggerKey: command
+  attributes:
+    name: go
+  repeatable: false
+  actions:
+  - ==: ActionBinding
+    actionKey: transition-phase
+    attributes:
+      phase: IN_PROGRESS
+```
+
+Nothing in the engine fires `GameEventContext.COMMAND` on its own - a plugin
+command is what actually raises it (`/minigame game trigger <environment> go`
+in `ab-minigame`), passing along the same `name` this binding is listening
+for. A phase can mix both: a `time-elapsed` binding as a fallback and a
+`command` binding letting an operator skip the wait early - whichever fires
+first wins, same as the score/time-limit race above.
 
 ### The same shape for FFA and a checkpoint race
 
-Only the `IN_PROGRESS` phase (and whether `teams`/`assign-teams` are present
-at all) actually changes between game types — `PRE_GAME_LOBBY`/
-`POST_GAME_LOBBY` above are reusable as-is.
+Only the `IN_PROGRESS` phase (and whether `teams`/team-assignment bindings
+are present at all) actually changes between game types — `PRE_GAME_LOBBY`/
+`POST_GAME_LOBBY` above are reusable as-is (minus the `join` binding, for a
+team-less mode).
 
 **FFA** — no `teams` in the `GameConfig`, spawn on `solo-spawn` instead of
 `team-spawn`, `award-score` defaults (`who: killer`, no `against`/
@@ -438,22 +512,16 @@ schematic → protect region → scan markers → mark `Arena` READY), wrapping 
 
 ## What's not built yet
 
-- **Nothing calls `Game.tick()` or bridges real Bukkit events into
-  `fireEvent`.** A consuming plugin needs to: run a repeating task that calls
-  `tick()` on every active game, and register a `PlayerDeathEvent` listener
-  that finds which game a dying player belongs to and calls
-  `fireEvent(new GameEventContext(GameEventContext.DEATH, Map.of("player",
-  victim, "killer", killer, "victim", victim)))` — note `award-score`/
-  `eliminate` default their `who` attribute to the context key `"player"`,
-  so a plain "eliminate on death" binding needs no attributes, while
-  "award the killer" needs `who: killer` explicitly.
-- **No command wires a `GameConfig`/`GameScript` file to an arena** — right
-  now these objects exist and (de)serialize correctly, but something in the
-  consuming plugin needs to load/author them (e.g. via a
-  `SimpleFileCache<String, GameConfig>` from `ablib-persistence`, keyed by a
-  chosen template name so many arenas can share one) and call
-  `arena.setGame(new ScriptedGame(name))` /
-  `game.setGameConfig(theLoadedConfig)`.
+The tick loop, the death-event bridge, and wiring a `GameConfig` file to an
+arena are no longer gaps in this library — they're implemented in the
+`ab-minigame` plugin (`GameTickTask`, `GameDeathListener`, `/minigame game
+create`, and a `SimpleFileCache<String, GameConfig>` per-file template
+store). See that repo's README for the actual command/GUI layer built on
+top of everything documented here. Still genuinely missing:
+
+- **No marker placement.** Spawn/lobby/checkpoint markers have no command or
+  GUI to actually place one anywhere yet, so `teleport-to-marker` currently
+  has nothing to find in a freshly-built arena.
 - Gameplay-critical custom blocks (a CTF flag, a BR supply crate) and a
   battle-royale shrinking world border are intentionally deferred — see the
   design discussion this library grew out of.
