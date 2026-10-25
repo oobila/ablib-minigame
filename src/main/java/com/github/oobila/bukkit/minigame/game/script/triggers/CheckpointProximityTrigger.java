@@ -1,7 +1,7 @@
 package com.github.oobila.bukkit.minigame.game.script.triggers;
 
 import com.github.oobila.bukkit.minigame.arena.Arena;
-import com.github.oobila.bukkit.minigame.arena.markers.CheckpointMarker;
+import com.github.oobila.bukkit.minigame.arena.ArenaMarker;
 import com.github.oobila.bukkit.minigame.game.Game;
 import com.github.oobila.bukkit.minigame.game.script.GameActionAttributes;
 import com.github.oobila.bukkit.minigame.game.script.GameEventContext;
@@ -15,9 +15,10 @@ import java.util.List;
 
 /**
  * Drives a checkpoint race: a player's score is how many checkpoints they've passed, and thus
- * which {@link CheckpointMarker} (ordered by {@code order}) they need to reach next. Attributes:
- * {@code radius} - how close a player needs to be to count as "reached" (default 2.0 blocks).
- * Advancing a player's score is a side effect of testing this trigger, not just its result.
+ * which {@link ArenaMarker#CHECKPOINT} marker (ordered by its {@code order} metadata) they need
+ * to reach next. Attributes: {@code radius} - how close a player needs to be to count as
+ * "reached" (default 2.0 blocks). Advancing a player's score is a side effect of testing this
+ * trigger, not just its result.
  */
 public class CheckpointProximityTrigger implements GameTrigger {
 
@@ -29,8 +30,8 @@ public class CheckpointProximityTrigger implements GameTrigger {
         if (arena == null) {
             return false;
         }
-        List<CheckpointMarker> checkpoints = arena.getMarkers(CheckpointMarker.class).stream()
-                .sorted(Comparator.comparingInt(CheckpointMarker::getOrder))
+        List<ArenaMarker> checkpoints = arena.getMarkers(ArenaMarker.CHECKPOINT).stream()
+                .sorted(Comparator.comparingInt(marker -> Integer.parseInt(marker.getMetadata().getOrDefault("order", "0"))))
                 .toList();
         if (checkpoints.isEmpty()) {
             return false;

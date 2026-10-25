@@ -2,10 +2,6 @@ package com.github.oobila.bukkit.minigame.game.script.actions;
 
 import com.github.oobila.bukkit.minigame.arena.Arena;
 import com.github.oobila.bukkit.minigame.arena.ArenaMarker;
-import com.github.oobila.bukkit.minigame.arena.markers.PostGameLobbySpawn;
-import com.github.oobila.bukkit.minigame.arena.markers.PreGameLobbySpawn;
-import com.github.oobila.bukkit.minigame.arena.markers.SoloSpawnLocation;
-import com.github.oobila.bukkit.minigame.arena.markers.TeamSpawnLocation;
 import com.github.oobila.bukkit.minigame.game.Game;
 import com.github.oobila.bukkit.minigame.game.script.GameAction;
 import com.github.oobila.bukkit.minigame.game.script.GameActionAttributes;
@@ -18,10 +14,13 @@ import org.bukkit.entity.Player;
 import java.util.List;
 
 /**
- * Attributes: {@code marker} - which marker type to send players to: "solo-spawn" (default,
- * round-robins players across every {@link SoloSpawnLocation}), "team-spawn" (each team goes to
- * the {@link TeamSpawnLocation} matching its configured colour), "pre-game-lobby" or
- * "post-game-lobby" (everyone goes to the same lobby marker).
+ * Attributes: {@code marker} - which marker type to send players to: {@link
+ * ArenaMarker#SOLO_SPAWN} (default, round-robins players across every marker of that type),
+ * {@link ArenaMarker#TEAM_SPAWN} (each team goes to whichever marker's {@code teamColour}
+ * metadata matches its configured colour), {@link ArenaMarker#PRE_GAME_LOBBY} or {@link
+ * ArenaMarker#POST_GAME_LOBBY} (everyone goes to the same lobby marker). Any other string is
+ * looked up as-is and round-robinned like {@code solo-spawn} - a host plugin's own marker type
+ * works here with no change needed in this library.
  */
 public class TeleportToMarkerAction implements GameAction {
 
@@ -33,26 +32,28 @@ public class TeleportToMarkerAction implements GameAction {
         if (arena == null) {
             return 0;
         }
-        switch (attributes.getString("marker", "solo-spawn")) {
-            case "team-spawn" -> teleportTeams(game, arena);
-            case "pre-game-lobby" -> teleportAll(game, arena.getMarkers(PreGameLobbySpawn.class));
-            case "post-game-lobby" -> teleportAll(game, arena.getMarkers(PostGameLobbySpawn.class));
-            default -> teleportRoundRobin(game.getPlayers(), arena.getMarkers(SoloSpawnLocation.class));
+        String markerType = attributes.getString("marker", ArenaMarker.SOLO_SPAWN);
+        switch (markerType) {
+            case ArenaMarker.TEAM_SPAWN -> teleportTeams(game, arena);
+            case ArenaMarker.PRE_GAME_LOBBY, ArenaMarker.POST_GAME_LOBBY ->
+                    teleportAll(game, arena.getMarkers(markerType));
+            default -> teleportRoundRobin(game.getPlayers(), arena.getMarkers(markerType));
         }
         return 0;
     }
 
     private void teleportTeams(Game game, Arena arena) {
-        List<TeamSpawnLocation> spawns = arena.getMarkers(TeamSpawnLocation.class);
+        List<ArenaMarker> spawns = arena.getMarkers(ArenaMarker.TEAM_SPAWN);
         for (Team team : game.getTeams()) {
+            String teamColour = team.getTeamConfig().getTeamColor().name();
             spawns.stream()
-                    .filter(spawn -> spawn.getTeamColour().equals(team.getTeamConfig().getTeamColor()))
+                    .filter(spawn -> teamColour.equals(spawn.getMetadata().get("teamColour")))
                     .findFirst()
                     .ifPresent(spawn -> team.forEachPlayer(player -> teleport(player, spawn.getLocation())));
         }
     }
 
-    private void teleportAll(Game game, List<? extends ArenaMarker> markers) {
+    private void teleportAll(Game game, List<ArenaMarker> markers) {
         if (markers.isEmpty()) {
             return;
         }
@@ -60,7 +61,7 @@ public class TeleportToMarkerAction implements GameAction {
         game.getPlayers().forEach(player -> teleport(player, location));
     }
 
-    private void teleportRoundRobin(List<OfflinePlayer> players, List<? extends ArenaMarker> markers) {
+    private void teleportRoundRobin(List<OfflinePlayer> players, List<ArenaMarker> markers) {
         if (markers.isEmpty()) {
             return;
         }

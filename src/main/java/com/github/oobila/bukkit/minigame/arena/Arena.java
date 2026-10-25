@@ -8,7 +8,6 @@ import lombok.Getter;
 import lombok.Setter;
 import org.bukkit.Location;
 import org.bukkit.configuration.serialization.ConfigurationSerializable;
-import org.bukkit.configuration.serialization.ConfigurationSerialization;
 import org.bukkit.configuration.serialization.SerializableAs;
 import org.jetbrains.annotations.NotNull;
 
@@ -25,7 +24,7 @@ public class Arena implements ConfigurationSerializable {
     private final ABID id;
     private final Location minLocation;
     private final Location maxLocation;
-    private final ArenaStatus status;
+    private ArenaStatus status;
     private final Map<Location, ArenaMarker> markers;
     private Game game;
     @Setter
@@ -57,13 +56,36 @@ public class Arena implements ConfigurationSerializable {
         if (game != null) {
             game.setArena(this);
         }
+        // SETUP only ever describes a brand new arena that's never hosted a game - once one
+        // has, there's no way back to SETUP, just IN_USE while bound and READY again once freed.
+        status = game != null ? ArenaStatus.IN_USE : ArenaStatus.READY;
     }
 
-    @SuppressWarnings("unchecked")
-    public <T extends ArenaMarker> List<T> getMarkers(Class<T> type) {
+    public void addMarker(ArenaMarker marker) {
+        markers.put(marker.getLocation(), marker);
+    }
+
+    /**
+     * Removes whichever marker occupies the same block as {@code location}, ignoring pitch/yaw -
+     * a marker's exact placement {@link Location} is kept with pitch/yaw (so
+     * {@code TeleportToMarkerAction} can orient a teleported player the way it was facing when
+     * placed), so it will essentially never match the caller's current orientation exactly.
+     * Returns whether a marker was actually found and removed.
+     */
+    public boolean removeMarkerAt(Location location) {
+        return markers.entrySet().removeIf(entry -> sameBlock(entry.getKey(), location));
+    }
+
+    private static boolean sameBlock(@NotNull Location a, @NotNull Location b) {
+        return a.getWorld() != null && a.getWorld().equals(b.getWorld())
+                && a.getBlockX() == b.getBlockX()
+                && a.getBlockY() == b.getBlockY()
+                && a.getBlockZ() == b.getBlockZ();
+    }
+
+    public List<ArenaMarker> getMarkers(String type) {
         return markers.values().stream()
-                .filter(type::isInstance)
-                .map(marker -> (T) marker)
+                .filter(marker -> marker.getType().equals(type))
                 .toList();
     }
 

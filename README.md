@@ -18,11 +18,6 @@ It is one of the `ablib-*` family of libraries (`ablib-common`,
 > deathmatch, and a checkpoint race, and driven end-to-end by the
 > `ab-minigame` plugin (tick loop, death-event bridge, commands, GUIs). See
 > "What's not built yet" at the bottom for what's still missing.
->
-> **This checkout is ahead of the last published release (`1.2.0`)** —
-> several fixes and the `command` trigger described below aren't in that jar
-> yet. See `ab-minigame`'s README ("Release status") for the exact list and
-> what needs releasing before the plugin builds against it again.
 
 ## Core concepts
 
@@ -51,7 +46,6 @@ The object hierarchy is **Environment → Arena → Game**:
 com.github.oobila.bukkit.minigame
 ├── environments/     — Environment, Portal, EnvironmentStatus
 ├── arena/            — Arena, ArenaStatus, ArenaMarker
-│   └── markers/         — concrete ArenaMarker types (spawns, lobbies, checkpoints)
 ├── team/             — Team, TeamConfig
 ├── game/             — Game, ScriptedGame, GameConfig, GameStatus
 │   └── script/           — the phase/trigger/action scripting engine
@@ -88,10 +82,13 @@ listener work).
 ### `Arena`
 
 The physical bounding box a game is played in: `minLocation`/`maxLocation`,
-an `ArenaStatus` (`SETUP`/`READY`/`IN_USE`/`CLEAN_UP`), a `Map<Location,
-ArenaMarker>`, and (not final) a `game`/`environment` pair of back-references.
-`getMarkers(Class<T>)` filters the marker map by concrete type. `setGame`
-wires the bidirectional Arena↔Game link.
+an `ArenaStatus` (`SETUP`/`READY`/`IN_USE`/`CLEAN_UP`, driven by `setGame` -
+see below), a `Map<Location, ArenaMarker>`, and (not final) a
+`game`/`environment` pair of back-references. `addMarker`/`removeMarkerAt`
+add/remove by location; `getMarkers(String type)` filters the marker map by
+`ArenaMarker.getType()`. `setGame` wires the bidirectional Arena↔Game link,
+and also drives `ArenaStatus`: `IN_USE` while a game is bound, `READY` once
+freed (an arena that's never hosted one stays `SETUP`).
 
 `Arena` persists its bound `Game` inline when one is set (nested
 `ConfigurationSerializable`, same pattern `Team` uses for `TeamConfig`) — so
@@ -99,23 +96,47 @@ an in-progress match survives a server restart for free via whatever cache
 the consuming plugin already stores Arenas in, with no separate game cache
 needed.
 
-### `ArenaMarker` and `arena.markers.*`
+### `ArenaMarker`
 
-`ArenaMarker` wraps a `Location` plus a free-form `Map<String,String>
-metadata` bag, and is the common base every concrete marker type extends.
-Current marker types:
+`ArenaMarker` is a single concrete class: a `Location`, a `String type`, and
+a free-form `Map<String, String> metadata` bag for whatever extra data that
+type needs. It used to be an abstract base with one Java subclass per marker
+kind (`SoloSpawnLocation`, `TeamSpawnLocation`, ...) - it was collapsed to
+this because `type` is just a string, with no registry to extend, so a host
+plugin (or another library built on this one) can place and look up its own
+marker types with no change needed here. Compare `GameAction`/`GameTrigger`,
+which *do* need a registry (`GameActionRegistry.register(key, ...)`) because
+the engine has to look an implementation up by key; a marker carries no
+behaviour of its own; a script's own bound actions/triggers decide what a
+given `type` means, so there's nothing to register.
 
-| Marker | Purpose |
-|---|---|
-| `SoloSpawnLocation` | Where an FFA/team-less player spawns |
-| `TeamSpawnLocation` | Where a team spawns, matched to a `TeamConfig` by `BlockColor` |
-| `PreGameLobbySpawn` | Where players wait before a match starts |
-| `PostGameLobbySpawn` | Where players go once a match ends |
-| `CheckpointMarker` | An ordered (`order`) waypoint for a checkpoint race |
+`SOLO_SPAWN`, `TEAM_SPAWN`, `PRE_GAME_LOBBY`, `POST_GAME_LOBBY` and
+`CHECKPOINT` are `ArenaMarker`'s own `public static final String` constants
+for the types the built-in `teleport-to-marker` action and
+`checkpoint-proximity` trigger already know about:
 
-Nothing yet scans a pasted schematic for these — they're expected to be
-placed by hand (or by whatever the `items.AreaSelectionTool` workflow grows
-into) until that's built out.
+| Type | Purpose | Metadata |
+|---|---|---|
+| `SOLO_SPAWN` (`"solo-spawn"`) | Where an FFA/team-less player spawns | — |
+| `TEAM_SPAWN` (`"team-spawn"`) | Where a team spawns | `teamColour` - a `BlockColor` name, matched to a `TeamConfig` |
+| `PRE_GAME_LOBBY` (`"pre-game-lobby"`) | Where players wait before a match starts | — |
+| `POST_GAME_LOBBY` (`"post-game-lobby"`) | Where players go once a match ends | — |
+| `CHECKPOINT` (`"checkpoint"`) | An ordered waypoint for a checkpoint race | `order` - a 0-based int, as a string |
+
+A third-party type works the same way: construct `new ArenaMarker(location,
+"my-plugin:my-type", Map.of("someKey", "someValue"))`, add it to an `Arena`
+via `addMarker`, and look it up with `arena.getMarkers("my-plugin:my-type")`
+from your own `GameAction`/`GameTrigger` - no subclass, no registration, and
+nothing in this library needs to know it exists. (Namespacing a custom type,
+e.g. with a plugin-name prefix, is on you - `ArenaMarker` doesn't enforce
+one, the same way a `GameAction`/`GameTrigger` key doesn't either.)
+
+This library places no `ArenaMarker`s itself - `ab-minigame` is the first
+real example of a placement workflow: builders place a placeholder
+`CustomBlock` per marker type while laying out an arena by hand, and
+`/minigame arena create`/`marker scan` convert whatever's found in the
+selection into the real markers, removing the placeholders. See that repo's
+README for the details; nothing about that mechanism lives in this library.
 
 ## `team` package
 
@@ -230,7 +251,7 @@ A consuming plugin must call `BuiltInGameScript.register()` once at startup
 | `command` | `name` (default `""`) | Bound to a `GameEventContext.COMMAND` event whose own `name` matches this binding's `name` (both default to `""`, so a script that doesn't care about naming can omit it on both sides). An alternative to `time-elapsed` for phases that should advance on an operator's say-so instead of a fixed countdown - see `ab-minigame`'s `/minigame game trigger` command, which is what actually fires the event. |
 | `score-threshold` | `threshold` (default 1), `target`: `player` (default) / `team` | Any player/team's score reaches the threshold. Also the finish line for a checkpoint race (`threshold` = number of checkpoints). |
 | `last-entity-standing` | `target`: `player` (default) / `team` | Only one non-eliminated player/team remains, out of more than one starter. |
-| `checkpoint-proximity` | `radius` (default 2.0) | Per active player: advances their score by one if they're within `radius` of the `CheckpointMarker` matching their current score (i.e. their next checkpoint). Side-effecting, not just a test. |
+| `checkpoint-proximity` | `radius` (default 2.0) | Per active player: advances their score by one if they're within `radius` of the `CHECKPOINT` marker matching their current score (i.e. their next checkpoint). Side-effecting, not just a test. |
 
 ## Example: a team deathmatch script
 
@@ -512,16 +533,14 @@ schematic → protect region → scan markers → mark `Arena` READY), wrapping 
 
 ## What's not built yet
 
-The tick loop, the death-event bridge, and wiring a `GameConfig` file to an
-arena are no longer gaps in this library — they're implemented in the
-`ab-minigame` plugin (`GameTickTask`, `GameDeathListener`, `/minigame game
-create`, and a `SimpleFileCache<String, GameConfig>` per-file template
-store). See that repo's README for the actual command/GUI layer built on
+The tick loop, the death-event bridge, wiring a `GameConfig` file to an
+arena, and marker placement are no longer gaps in this library — they're
+implemented in the `ab-minigame` plugin (`GameTickTask`, `GameDeathListener`,
+`/minigame game create`, a `SimpleFileCache<String, GameConfig>` per-file
+template store, and a `CustomBlock`-based placeholder/scan workflow for
+markers). See that repo's README for the actual command/GUI layer built on
 top of everything documented here. Still genuinely missing:
 
-- **No marker placement.** Spawn/lobby/checkpoint markers have no command or
-  GUI to actually place one anywhere yet, so `teleport-to-marker` currently
-  has nothing to find in a freshly-built arena.
 - Gameplay-critical custom blocks (a CTF flag, a BR supply crate) and a
   battle-royale shrinking world border are intentionally deferred — see the
   design discussion this library grew out of.
